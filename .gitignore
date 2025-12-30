@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Build output
+dist-bundle/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmp/
+temp/
+
+# Binaries and build artifacts
+bin/
+*.exe
+rpg-mcp-*
+
+# Test debug files
+*_debug.txt
+*_errors.txt
+*_output.txt
+tsc_errors.txt
+build_errors.txt
+
+# Reference materials (keep docs, ignore cloned repos)
+reference/azgaar/
+
+# Developer-only agent orchestration docs (not for version control)
+Agents/
