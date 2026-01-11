@@ -19,6 +19,7 @@ import { getDb } from '../../storage/index.js';
 import { CharacterRepository } from '../../storage/repos/character.repo.js';
 import { provisionStartingEquipment } from '../../services/starting-equipment.service.js';
 import { createActionRouter, ActionDefinition, McpResponse } from '../../utils/action-router.js';
+import { RichFormatter } from '../utils/formatter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -506,8 +507,22 @@ const router = createActionRouter({
 export const CharacterManageTool = {
     name: 'character_manage',
     description: `Manage characters and progression.
+
+👤 CHARACTER LIFECYCLE:
+1. create - Define character with class/race/stats (auto-provisions equipment)
+2. get/update - View or modify properties
+3. add_xp/level_up - Advance character progression
+
+⚔️ FOR COMBAT:
+- Characters need HP, AC, stats for combat participation
+- Use combat_manage to add characters to encounters
+
+📦 EQUIPMENT NOTE:
+- provisionEquipment: true (default) auto-grants starting equipment
+- For custom items, create with item_manage first, then use inventory_manage
+
 Actions: create, get, update, list, delete, add_xp, get_progression, level_up
-Aliases: new/add/spawn->create, fetch/find->get, modify/edit->update, all/query->list, remove/destroy->delete, xp/award_xp->add_xp, progression->get_progression, levelup/advance->level_up`,
+Aliases: new/add/spawn->create, fetch/find->get, modify/edit->update`,
     inputSchema: z.object({
         action: z.string().describe('Action: create, get, update, list, delete, add_xp, get_progression, level_up'),
         // Create fields
@@ -547,5 +562,156 @@ Aliases: new/add/spawn->create, fetch/find->get, modify/edit->update, all/query-
 };
 
 export async function handleCharacterManage(args: unknown, _ctx: SessionContext): Promise<McpResponse> {
-    return router(args as Record<string, unknown>);
+    const response = await router(args as Record<string, unknown>);
+
+    // Parse the JSON response to add ASCII formatting
+    try {
+        const jsonText = response.content[0]?.text;
+        if (!jsonText) return response;
+
+        const data = JSON.parse(jsonText);
+        const action = (args as Record<string, unknown>).action as string;
+
+        let output = '';
+
+        // Check for any error type (boolean true or string error codes)
+        const hasError = data.error === true || typeof data.error === 'string';
+
+        if (hasError) {
+            output = RichFormatter.header('Character Error', '❌');
+            output += RichFormatter.alert(data.message || 'Unknown error', 'error');
+            if (data.issues) {
+                output += RichFormatter.section('Validation Issues');
+                output += RichFormatter.list(data.issues.map((i: any) => `${i.path}: ${i.message}`));
+            }
+            if (data.suggestions) {
+                output += RichFormatter.section('Suggestions');
+                output += RichFormatter.list(data.suggestions.map((s: any) =>
+                    typeof s === 'string' ? s : `${s.value} (${Math.round(s.similarity * 100)}%)`
+                ));
+            }
+        } else if (action === 'create' || action === 'new' || action === 'add' || action === 'spawn') {
+            output = RichFormatter.header(`Character Created: ${data.name}`, '👤');
+            output += RichFormatter.keyValue({
+                'ID': data.id,
+                'Name': data.name,
+                'Race': data.race || 'Unknown',
+                'Class': data.characterClass || 'Adventurer',
+                'Level': data.level || 1,
+                'Type': data.characterType || 'pc'
+            });
+            output += RichFormatter.section('Stats');
+            if (data.stats) {
+                const stats = data.stats;
+                output += `STR: ${stats.str} | DEX: ${stats.dex} | CON: ${stats.con}\n`;
+                output += `INT: ${stats.int} | WIS: ${stats.wis} | CHA: ${stats.cha}\n`;
+            }
+            output += RichFormatter.section('Combat');
+            output += RichFormatter.keyValue({
+                'HP': `${data.hp}/${data.maxHp}`,
+                'AC': data.ac || 10
+            });
+            if (data._provisioning) {
+                output += RichFormatter.section('Starting Equipment');
+                if (data._provisioning.equipmentGranted?.length) {
+                    output += RichFormatter.list(data._provisioning.equipmentGranted);
+                }
+                if (data._provisioning.spellsGranted?.length) {
+                    output += `Spells: ${data._provisioning.spellsGranted.join(', ')}\n`;
+                }
+            }
+        } else if (action === 'get' || action === 'fetch' || action === 'find') {
+            output = RichFormatter.header(`${data.name}`, '👤');
+            output += RichFormatter.keyValue({
+                'ID': data.id,
+                'Race': data.race || 'Unknown',
+                'Class': data.characterClass || 'Adventurer',
+                'Level': data.level || 1,
+                'XP': data.xp || 0,
+                'Type': data.characterType || 'pc'
+            });
+            output += RichFormatter.section('Stats');
+            if (data.stats) {
+                const stats = data.stats;
+                output += `STR: ${stats.str} | DEX: ${stats.dex} | CON: ${stats.con}\n`;
+                output += `INT: ${stats.int} | WIS: ${stats.wis} | CHA: ${stats.cha}\n`;
+            }
+            output += RichFormatter.section('Combat');
+            output += RichFormatter.keyValue({
+                'HP': `${data.hp}/${data.maxHp}`,
+                'AC': data.ac || 10
+            });
+            if (data.conditions?.length) {
+                output += RichFormatter.section('Conditions');
+                output += RichFormatter.list(data.conditions.map((c: any) => c.name || c));
+            }
+        } else if (action === 'list' || action === 'all' || action === 'query') {
+            output = RichFormatter.header(`Characters (${data.count})`, '👥');
+            if (data.filter && data.filter !== 'all') {
+                output += `*Filtered by: ${data.filter}*\n\n`;
+            }
+            if (data.characters?.length) {
+                const rows = data.characters.map((c: any) => [
+                    c.name,
+                    c.characterClass || 'Adventurer',
+                    `Lv${c.level || 1}`,
+                    `${c.hp}/${c.maxHp}`,
+                    c.characterType || 'pc'
+                ]);
+                output += RichFormatter.table(['Name', 'Class', 'Level', 'HP', 'Type'], rows);
+            } else {
+                output += '*No characters found*\n';
+            }
+        } else if (action === 'update' || action === 'modify' || action === 'edit') {
+            output = RichFormatter.header(`Character Updated: ${data.name}`, '✏️');
+            output += data.message + '\n';
+        } else if (action === 'delete' || action === 'remove') {
+            output = RichFormatter.header('Character Deleted', '🗑️');
+            output += `ID: ${data.characterId}\n`;
+        } else if (action === 'add_xp' || action === 'xp') {
+            output = RichFormatter.header(`XP Added: ${data.name}`, '⭐');
+            output += RichFormatter.keyValue({
+                'Previous XP': data.oldXp,
+                'Added': data.newXp - data.oldXp,
+                'Total XP': data.newXp,
+                'Current Level': data.level
+            });
+            if (data.canLevelUp) {
+                output += RichFormatter.alert('LEVEL UP AVAILABLE!', 'success');
+            } else if (data.nextLevelXp) {
+                output += `*${data.nextLevelXp - data.newXp} XP until Level ${data.level + 1}*\n`;
+            }
+        } else if (action === 'get_progression' || action === 'progression') {
+            output = RichFormatter.header(`Level ${data.level} Progression`, '📊');
+            if (data.maxLevel) {
+                output += '*Maximum level reached!*\n';
+            } else {
+                output += RichFormatter.keyValue({
+                    'XP for this level': data.xpRequiredForLevel,
+                    'XP for next level': data.xpForNextLevel,
+                    'XP needed': data.xpToNext
+                });
+            }
+        } else if (action === 'level_up' || action === 'levelup') {
+            output = RichFormatter.header(`${data.name} Leveled Up!`, '🎉');
+            output += RichFormatter.keyValue({
+                'Previous Level': data.oldLevel,
+                'New Level': data.newLevel,
+                'HP Increase': data.hpIncrease || 0,
+                'New Max HP': data.newMaxHp
+            });
+        } else {
+            // Fallback for unknown actions
+            output = RichFormatter.header('Character Operation', '👤');
+            output += JSON.stringify(data, null, 2) + '\n';
+        }
+
+        // Embed JSON for programmatic access
+        output += RichFormatter.embedJson(data, 'CHARACTER_MANAGE');
+
+        return { content: [{ type: 'text', text: output }] };
+    } catch {
+        // If JSON parsing fails, return original response
+        return response;
+    }
 }

@@ -33,7 +33,8 @@
       "mcp__mnehmos_ooda_mcp__apply_diff",
       "Bash(xargs basename:*)",
       "Bash(npm pack:*)",
-      "Bash(timeout 3 node:*)"
+      "Bash(timeout 3 node:*)",
+      "Bash(git branch:*)"
     ]
   }
 }

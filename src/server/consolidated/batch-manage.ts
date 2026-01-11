@@ -11,6 +11,7 @@ import { RichFormatter } from '../utils/formatter.js';
 import { getDb } from '../../storage/index.js';
 import { CharacterRepository } from '../../storage/repos/character.repo.js';
 import { SessionContext } from '../types.js';
+import { buildConsolidatedRegistry } from '../consolidated-registry.js';
 
 export interface McpResponse {
     content: Array<{ type: 'text'; text: string }>;
@@ -18,7 +19,7 @@ export interface McpResponse {
 
 const ACTIONS = [
     'create_characters', 'create_npcs', 'distribute_items',
-    'execute_workflow', 'list_templates', 'get_template'
+    'execute_workflow', 'list_templates', 'get_template', 'execute_sequence'
 ] as const;
 
 type BatchAction = typeof ACTIONS[number];
@@ -46,7 +47,12 @@ const ALIASES: Record<string, BatchAction> = {
     'available': 'list_templates',
     'template': 'get_template',
     'get_workflow': 'get_template',
-    'show_template': 'get_template'
+    'show_template': 'get_template',
+    'sequence': 'execute_sequence',
+    'run_sequence': 'execute_sequence',
+    'pipeline': 'execute_sequence',
+    'chain': 'execute_sequence',
+    'multi_tool': 'execute_sequence'
 };
 
 function ensureDb() {
@@ -149,7 +155,15 @@ const BatchManageInputSchema = z.object({
 
     // workflow fields
     templateId: z.string().optional().describe('Workflow template ID'),
-    params: z.record(z.string(), z.any()).optional().describe('Template parameters')
+    params: z.record(z.string(), z.any()).optional().describe('Template parameters'),
+
+    // execute_sequence fields
+    steps: z.array(z.object({
+        tool: z.string().describe('Tool name (e.g., "character_manage", "item_manage")'),
+        args: z.record(z.any()).describe('Tool arguments'),
+        id: z.string().optional().describe('Step ID for referencing results in later steps')
+    })).max(10).optional().describe('Sequence of tools to execute (1-10)'),
+    stopOnError: z.boolean().optional().default(true).describe('Stop execution if a step fails')
 });
 
 type BatchManageInput = z.infer<typeof BatchManageInputSchema>;
@@ -562,6 +576,200 @@ async function handleGetTemplate(input: BatchManageInput, _ctx: SessionContext):
     return { content: [{ type: 'text', text: output }] };
 }
 
+/**
+ * Resolve parameter references like {{step1.characterId}} from previous step results
+ */
+function resolveStepReferences(
+    args: Record<string, any>,
+    stepResults: Map<string, any>
+): Record<string, any> {
+    const resolved: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(args)) {
+        if (typeof value === 'string' && value.startsWith('{{') && value.endsWith('}}')) {
+            // Extract reference like "step1.characterId" or "step1.created[0].id"
+            const refPath = value.slice(2, -2).trim();
+            const dotIndex = refPath.indexOf('.');
+            if (dotIndex > 0) {
+                const stepId = refPath.slice(0, dotIndex);
+                const propertyPath = refPath.slice(dotIndex + 1);
+
+                const stepResult = stepResults.get(stepId);
+                if (stepResult) {
+                    // Navigate the property path
+                    resolved[key] = getNestedValue(stepResult, propertyPath);
+                } else {
+                    // Reference not found, keep original
+                    resolved[key] = value;
+                }
+            } else {
+                resolved[key] = value;
+            }
+        } else if (typeof value === 'object' && value !== null) {
+            // Recursively resolve nested objects
+            resolved[key] = resolveStepReferences(value, stepResults);
+        } else {
+            resolved[key] = value;
+        }
+    }
+
+    return resolved;
+}
+
+/**
+ * Get nested value from object using dot notation (supports array indexing)
+ * e.g., "created[0].id" or "character.stats.str"
+ */
+function getNestedValue(obj: any, path: string): any {
+    const parts = path.split(/\.|\[|\]/).filter(p => p !== '');
+    let current = obj;
+
+    for (const part of parts) {
+        if (current === null || current === undefined) return undefined;
+        current = current[part];
+    }
+
+    return current;
+}
+
+async function handleExecuteSequence(input: BatchManageInput, ctx: SessionContext): Promise<McpResponse> {
+    if (!input.steps || input.steps.length === 0) {
+        return {
+            content: [{
+                type: 'text',
+                text: RichFormatter.error('execute_sequence requires steps array') +
+                    RichFormatter.embedJson({ error: true, message: 'steps required' }, 'BATCH_MANAGE')
+            }]
+        };
+    }
+
+    const registry = buildConsolidatedRegistry();
+    const stopOnError = input.stopOnError ?? true;
+
+    const stepResults = new Map<string, any>();
+    const executedSteps: Array<{
+        stepIndex: number;
+        stepId: string;
+        tool: string;
+        success: boolean;
+        result?: any;
+        error?: string;
+    }> = [];
+
+    let output = RichFormatter.header('Executing Sequence', '⚙️');
+    output += `*${input.steps.length} step(s) to execute*\n\n`;
+
+    for (let i = 0; i < input.steps.length; i++) {
+        const step = input.steps[i];
+        const stepId = step.id || `step${i + 1}`;
+        const toolEntry = registry[step.tool];
+
+        output += `**Step ${i + 1}/${input.steps.length}**: \`${step.tool}\`\n`;
+
+        if (!toolEntry) {
+            const error = `Unknown tool: ${step.tool}`;
+            output += `  ❌ ${error}\n`;
+
+            executedSteps.push({
+                stepIndex: i,
+                stepId,
+                tool: step.tool,
+                success: false,
+                error
+            });
+
+            if (stopOnError) {
+                output += `\n*Execution stopped due to error (stopOnError=true)*\n`;
+                break;
+            }
+            continue;
+        }
+
+        try {
+            // Resolve any references to previous step results
+            const resolvedArgs = resolveStepReferences(step.args, stepResults);
+
+            // Execute the tool
+            const response = await toolEntry.handler(resolvedArgs, ctx);
+
+            // Parse the result from the response
+            let result: any = null;
+            if (response.content?.[0]?.text) {
+                // Try to extract JSON from embedded data
+                const text = response.content[0].text;
+                const jsonMatch = text.match(/<!--JSON:([^>]+)-->/);
+                if (jsonMatch) {
+                    try {
+                        result = JSON.parse(jsonMatch[1]);
+                    } catch {
+                        // Use raw text if JSON parsing fails
+                        result = { raw: text };
+                    }
+                } else {
+                    result = { raw: text };
+                }
+            }
+
+            // Store result for reference by later steps
+            stepResults.set(stepId, result);
+
+            const success = !result?.error;
+            output += success ? `  ✅ Success\n` : `  ⚠️ Completed with warnings\n`;
+
+            executedSteps.push({
+                stepIndex: i,
+                stepId,
+                tool: step.tool,
+                success,
+                result
+            });
+
+        } catch (err: any) {
+            const error = err.message || 'Unknown error';
+            output += `  ❌ Error: ${error}\n`;
+
+            executedSteps.push({
+                stepIndex: i,
+                stepId,
+                tool: step.tool,
+                success: false,
+                error
+            });
+
+            if (stopOnError) {
+                output += `\n*Execution stopped due to error (stopOnError=true)*\n`;
+                break;
+            }
+        }
+    }
+
+    const successCount = executedSteps.filter(s => s.success).length;
+    const failureCount = executedSteps.filter(s => !s.success).length;
+
+    output += RichFormatter.section('Summary');
+    output += RichFormatter.keyValue({
+        'Total Steps': input.steps.length,
+        'Executed': executedSteps.length,
+        'Succeeded': successCount,
+        'Failed': failureCount
+    });
+
+    const resultPayload = {
+        success: failureCount === 0,
+        actionType: 'execute_sequence',
+        totalSteps: input.steps.length,
+        executedSteps: executedSteps.length,
+        successCount,
+        failureCount,
+        steps: executedSteps,
+        stepResults: Object.fromEntries(stepResults)
+    };
+
+    output += RichFormatter.embedJson(resultPayload, 'BATCH_MANAGE');
+
+    return { content: [{ type: 'text', text: output }] };
+}
+
 // Main handler
 export async function handleBatchManage(args: unknown, _ctx: SessionContext): Promise<McpResponse> {
     const input = BatchManageInputSchema.parse(args);
@@ -590,6 +798,8 @@ export async function handleBatchManage(args: unknown, _ctx: SessionContext): Pr
             return handleListTemplates(input, _ctx);
         case 'get_template':
             return handleGetTemplate(input, _ctx);
+        case 'execute_sequence':
+            return handleExecuteSequence(input, _ctx);
         default:
             return {
                 content: [{
@@ -604,9 +814,14 @@ export async function handleBatchManage(args: unknown, _ctx: SessionContext): Pr
 // Tool definition for registration
 export const BatchManageTool = {
     name: 'batch_manage',
-    description: `Consolidated batch operations (6→1).
+    description: `Consolidated batch operations (7 actions).
+
+🔗 WORKFLOW ORCHESTRATION:
+Use execute_sequence to chain ANY tools together with parameter passing.
+Results from step N can be referenced in step N+1 using {{stepId.property}}.
 
 Actions:
+• execute_sequence - Chain multiple tools with parameter passing (NEW!)
 • create_characters - Create multiple characters at once (up to 20)
 • create_npcs - Create NPCs for a location (up to 50)
 • distribute_items - Give items to multiple characters
@@ -615,9 +830,11 @@ Actions:
 • get_template - Get details of a workflow template
 
 Examples:
-- Create party: { action: "create_characters", characters: [{ name: "Valeros", class: "Fighter" }, ...] }
-- Populate village: { action: "create_npcs", locationName: "Thornwood", npcs: [{ name: "Marta", role: "Innkeeper" }, ...] }
-- Distribute loot: { action: "distribute_items", distributions: [{ characterId: "...", items: ["Sword", "Shield"] }, ...] }
-- List workflows: { action: "list_templates" }`,
+- Chain tools: { action: "execute_sequence", steps: [
+    { tool: "item_manage", args: { action: "create", name: "Longsword" }, id: "sword" },
+    { tool: "inventory_manage", args: { action: "give", characterId: "xxx", itemId: "{{sword.item.id}}" } }
+  ]}
+- Create party: { action: "create_characters", characters: [{ name: "Valeros", class: "Fighter" }] }
+- Populate village: { action: "create_npcs", locationName: "Thornwood", npcs: [{ name: "Marta", role: "Innkeeper" }] }`,
     inputSchema: BatchManageInputSchema
 };

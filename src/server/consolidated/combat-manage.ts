@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 import { createActionRouter, ActionDefinition, McpResponse } from '../../utils/action-router.js';
 import { SessionContext } from '../types.js';
 import { RichFormatter } from '../utils/formatter.js';
@@ -18,12 +19,13 @@ import {
     handleRollDeathSave,
     handleExecuteLairAction
 } from '../combat-tools.js';
+import { expandCreatureTemplate, listAllTemplates } from '../../data/creature-presets.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ACTIONS = ['create', 'get', 'end', 'load', 'advance', 'death_save', 'lair_action'] as const;
+const ACTIONS = ['create', 'get', 'end', 'load', 'advance', 'death_save', 'lair_action', 'spawn_quick_enemy'] as const;
 type CombatManageAction = typeof ACTIONS[number];
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -99,6 +101,15 @@ const LairActionSchema = z.object({
         dc: z.number().int().min(1).max(30)
     }).optional(),
     halfDamageOnSave: z.boolean().default(true)
+});
+
+const SpawnQuickEnemySchema = z.object({
+    action: z.literal('spawn_quick_enemy'),
+    creature: z.string().describe('Creature name or template (e.g., "goblin", "orc:warrior")'),
+    count: z.number().int().min(1).max(10).default(1).describe('Number of enemies to spawn'),
+    position: z.object({ x: z.number(), y: z.number() }).optional().describe('Starting position (defaults to random)'),
+    encounterId: z.string().optional().describe('Add to existing encounter (creates new if omitted)'),
+    seed: z.string().optional().describe('Seed for deterministic combat (auto-generated if omitted)')
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -190,6 +201,90 @@ const definitions: Record<CombatManageAction, ActionDefinition> = {
             return extractResultData(result, 'lair_action');
         },
         aliases: ['lair', 'legendary', 'boss_action']
+    },
+
+    spawn_quick_enemy: {
+        schema: SpawnQuickEnemySchema,
+        handler: async (params: z.infer<typeof SpawnQuickEnemySchema>) => {
+            if (!currentContext) throw new Error('No session context');
+
+            // Expand creature template
+            const preset = expandCreatureTemplate(params.creature);
+            if (!preset) {
+                const available = listAllTemplates();
+                return {
+                    error: true,
+                    actionType: 'spawn_quick_enemy',
+                    message: `Unknown creature: "${params.creature}"`,
+                    availableCreatures: available.slice(0, 20),
+                    hint: `Try one of: ${available.slice(0, 5).join(', ')}...`
+                };
+            }
+
+            // Build participants from preset
+            const count = params.count || 1;
+            const participants = [];
+
+            for (let i = 0; i < count; i++) {
+                const id = `enemy-${randomUUID().slice(0, 8)}`;
+                const basePos = params.position || { x: 10, y: 10 };
+                const pos = count > 1
+                    ? { x: basePos.x + (i % 3) * 2, y: basePos.y + Math.floor(i / 3) * 2 }
+                    : basePos;
+
+                participants.push({
+                    id,
+                    name: count > 1 ? `${preset.name} ${i + 1}` : preset.name,
+                    initiativeBonus: Math.floor((preset.stats.dex - 10) / 2),
+                    hp: preset.hp,
+                    maxHp: preset.maxHp,
+                    isEnemy: true,
+                    conditions: [],
+                    position: pos,
+                    resistances: preset.resistances || [],
+                    vulnerabilities: preset.vulnerabilities || [],
+                    immunities: preset.immunities || []
+                });
+            }
+
+            // Create encounter with these participants
+            const seed = params.seed || `quick-${Date.now()}`;
+            const createParams = {
+                seed,
+                participants,
+                terrain: { obstacles: [], difficultTerrain: [], water: [] }
+            };
+
+            const result = await handleCreateEncounter(createParams, currentContext);
+            const resultData = extractResultData(result, 'spawn_quick_enemy');
+
+            // Enhance with spawn info
+            return {
+                ...resultData,
+                actionType: 'spawn_quick_enemy',
+                creature: params.creature,
+                spawnedCount: count,
+                enemies: participants.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    hp: p.hp,
+                    maxHp: p.maxHp,
+                    ac: preset.ac,
+                    position: p.position,
+                    attack: preset.defaultAttack
+                })),
+                creatureStats: {
+                    name: preset.name,
+                    hp: preset.hp,
+                    ac: preset.ac,
+                    cr: preset.cr,
+                    traits: preset.traits
+                },
+                readyForCombat: true,
+                hint: 'Use combat_action to attack, combat_map to render grid'
+            };
+        },
+        aliases: ['quick', 'spawn', 'summon', 'add_enemy']
     }
 };
 
@@ -237,10 +332,14 @@ const router = createActionRouter({
 export const CombatManageTool = {
     name: 'combat_manage',
     description: `Unified combat encounter management. Actions: ${ACTIONS.join(', ')}.
-Aliases: start/begin→create, state/status→get, finish/stop→end, restore/resume→load, next→advance.
+Aliases: start/begin→create, state/status→get, finish/stop→end, restore/resume→load, next→advance, quick/spawn→spawn_quick_enemy.
 
-⚔️ COMBAT WORKFLOW:
-1. create - Start encounter with participants and terrain
+⚔️ QUICK START:
+- spawn_quick_enemy: Instantly create combat with preset creatures (goblin, orc, skeleton, etc.)
+  Example: { action: "spawn_quick_enemy", creature: "goblin", count: 3 }
+
+⚔️ FULL WORKFLOW:
+1. create - Start encounter with custom participants and terrain
 2. get - View current state
 3. advance - Move to next turn
 4. death_save - Roll death save for downed character
@@ -248,7 +347,8 @@ Aliases: start/begin→create, state/status→get, finish/stop→end, restore/re
 6. end - Finish combat
 
 For combat ACTIONS (attack, move, cast), use combat_action tool instead.
-For MAP operations (render, aoe, terrain), use combat_map tool instead.`,
+For MAP operations (render, aoe, terrain), use combat_map tool instead.
+For CORPSES after combat, use corpse_manage tool.`,
     inputSchema: z.object({
         action: z.string().describe(`Action: ${ACTIONS.join(', ')}`),
         encounterId: z.string().optional().describe('Encounter ID (required for most actions)'),
@@ -261,7 +361,11 @@ For MAP operations (render, aoe, terrain), use combat_map tool instead.`,
         damage: z.number().optional().describe('Lair action damage'),
         damageType: z.string().optional().describe('Damage type'),
         savingThrow: z.any().optional().describe('Saving throw for lair action'),
-        halfDamageOnSave: z.boolean().optional().describe('Half damage on save')
+        halfDamageOnSave: z.boolean().optional().describe('Half damage on save'),
+        // spawn_quick_enemy fields
+        creature: z.string().optional().describe('Creature template (e.g., "goblin", "orc:warrior")'),
+        count: z.number().optional().describe('Number of enemies to spawn (1-10)'),
+        position: z.object({ x: z.number(), y: z.number() }).optional().describe('Starting position')
     })
 };
 
@@ -296,6 +400,35 @@ export async function handleCombatManage(args: unknown, ctx: SessionContext): Pr
                     if (parsed.encounterId) {
                         output += RichFormatter.keyValue({ 'Encounter ID': `\`${parsed.encounterId}\`` });
                     }
+                    break;
+                case 'spawn_quick_enemy':
+                    output = RichFormatter.header('Quick Combat Ready', '👹');
+                    if (parsed.encounterId) {
+                        output += RichFormatter.keyValue({
+                            'Encounter ID': `\`${parsed.encounterId}\``,
+                            'Creature': parsed.creature,
+                            'Count': parsed.spawnedCount
+                        });
+                    }
+                    if (parsed.creatureStats) {
+                        output += '\n**Creature Stats:**\n';
+                        output += RichFormatter.keyValue({
+                            'HP': parsed.creatureStats.hp,
+                            'AC': parsed.creatureStats.ac,
+                            'CR': parsed.creatureStats.cr || 'N/A'
+                        });
+                        if (parsed.creatureStats.traits?.length > 0) {
+                            output += '\n**Traits:** ' + parsed.creatureStats.traits.join(', ') + '\n';
+                        }
+                    }
+                    if (parsed.enemies?.length > 0) {
+                        output += '\n**Enemies Spawned:**\n';
+                        const rows = parsed.enemies.map((e: { name: string; hp: number; position: { x: number; y: number }; attack?: { name: string; damage: string } }) =>
+                            [e.name, `${e.hp} HP`, `(${e.position.x}, ${e.position.y})`, e.attack?.damage || '-']
+                        );
+                        output += RichFormatter.table(['Name', 'HP', 'Position', 'Attack'], rows);
+                    }
+                    output += '\n' + RichFormatter.alert('Combat ready! Use combat_action to attack.', 'success');
                     break;
                 case 'get':
                     output = RichFormatter.header('Encounter State', '📋');

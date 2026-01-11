@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 import { createActionRouter, ActionDefinition, McpResponse } from '../../utils/action-router.js';
 import { CorpseRepository } from '../../storage/repos/corpse.repo.js';
 import { getDb } from '../../storage/index.js';
@@ -43,7 +44,7 @@ function getRepo(): CorpseRepository {
 
 const CreateSchema = z.object({
     action: z.literal('create'),
-    characterId: z.string().describe('ID of the dead character'),
+    characterId: z.string().optional().describe('ID of the dead character (optional for ephemeral enemies)'),
     characterName: z.string().describe('Name of the dead character'),
     characterType: z.enum(['pc', 'npc', 'enemy', 'neutral']).describe('Type of character'),
     creatureType: z.string().optional().describe('Creature type for loot table lookup'),
@@ -170,8 +171,13 @@ const definitions: Record<CorpseAction, ActionDefinition> = {
         schema: CreateSchema,
         handler: async (params: z.infer<typeof CreateSchema>) => {
             const repo = getRepo();
+
+            // Generate ephemeral ID if not provided (for enemies killed in combat without full character records)
+            const characterId = params.characterId || `ephemeral-${randomUUID()}`;
+            const isEphemeral = !params.characterId;
+
             const corpse = repo.createFromDeath(
-                params.characterId,
+                characterId,
                 params.characterName,
                 params.characterType,
                 {
@@ -186,7 +192,8 @@ const definitions: Record<CorpseAction, ActionDefinition> = {
             return {
                 success: true,
                 corpse,
-                message: `Corpse created for ${params.characterName}`
+                isEphemeral,
+                message: `Corpse created for ${params.characterName}${isEphemeral ? ' (ephemeral enemy)' : ''}`
             };
         },
         aliases: ['new', 'add', 'spawn']

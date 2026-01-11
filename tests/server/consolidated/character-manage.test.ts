@@ -4,6 +4,20 @@ import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';
 import { randomUUID } from 'crypto';
 
+/**
+ * Extract embedded JSON from ASCII-formatted response
+ * Looks for <!-- TAG_JSON ... TAG_JSON --> pattern
+ */
+function extractJson(text: string): unknown {
+    // Try embedded JSON first (new format)
+    const jsonMatch = text.match(/<!-- \w+_JSON\n([\s\S]*?)\n\w+_JSON -->/);
+    if (jsonMatch) {
+        return JSON.parse(jsonMatch[1]);
+    }
+    // Fall back to direct JSON parse (old format)
+    return JSON.parse(text);
+}
+
 describe('character_manage consolidated tool', () => {
     let db: ReturnType<typeof getDb>;
     let characterRepo: CharacterRepository;
@@ -40,7 +54,7 @@ describe('character_manage consolidated tool', () => {
                 name: 'Test Hero'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.id).toBeDefined();
             expect(parsed.name).toBe('Test Hero');
@@ -62,7 +76,7 @@ describe('character_manage consolidated tool', () => {
                 characterType: 'pc'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.name).toBe('Valeros');
             expect(parsed.characterClass).toBe('Fighter');
@@ -78,7 +92,7 @@ describe('character_manage consolidated tool', () => {
                 level: 1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             // Should have _provisioning info
             expect(parsed._provisioning).toBeDefined();
         });
@@ -90,7 +104,7 @@ describe('character_manage consolidated tool', () => {
                 provisionEquipment: false
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed._provisioning).toBeUndefined();
         });
 
@@ -100,7 +114,7 @@ describe('character_manage consolidated tool', () => {
                 name: 'Alias Test'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -111,7 +125,7 @@ describe('character_manage consolidated tool', () => {
                 name: 'Spawn Test'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -126,7 +140,7 @@ describe('character_manage consolidated tool', () => {
                 class: 'Rogue',
                 level: 3
             }, ctx);
-            characterId = JSON.parse(result.content[0].text).id;
+            characterId = extractJson(result.content[0].text).id;
         });
 
         it('should get character by ID', async () => {
@@ -135,7 +149,7 @@ describe('character_manage consolidated tool', () => {
                 characterId
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.name).toBe('Get Test Hero');
             expect(parsed.characterClass).toBe('Rogue');
             expect(parsed.level).toBe(3);
@@ -147,7 +161,7 @@ describe('character_manage consolidated tool', () => {
                 characterId: randomUUID()
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('not found');
         });
@@ -158,7 +172,7 @@ describe('character_manage consolidated tool', () => {
                 characterId
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.name).toBe('Get Test Hero');
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -175,7 +189,7 @@ describe('character_manage consolidated tool', () => {
                 maxHp: 20,
                 level: 1
             }, ctx);
-            characterId = JSON.parse(result.content[0].text).id;
+            characterId = extractJson(result.content[0].text).id;
         });
 
         it('should update character properties', async () => {
@@ -187,7 +201,7 @@ describe('character_manage consolidated tool', () => {
                 level: 2
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.name).toBe('Updated Name');
             expect(parsed.hp).toBe(15);
@@ -201,7 +215,7 @@ describe('character_manage consolidated tool', () => {
                 addConditions: [{ name: 'Poisoned', duration: 3 }]
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.conditions).toBeDefined();
             expect(parsed.conditions.some((c: any) => c.name === 'Poisoned')).toBe(true);
         });
@@ -221,7 +235,7 @@ describe('character_manage consolidated tool', () => {
                 removeConditions: ['Blinded']
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.conditions.some((c: any) => c.name === 'Blinded')).toBe(false);
         });
 
@@ -232,7 +246,7 @@ describe('character_manage consolidated tool', () => {
                 ac: 15
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.ac).toBe(15);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -250,7 +264,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'list'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.count).toBe(3);
             expect(parsed.characters).toHaveLength(3);
         });
@@ -261,7 +275,7 @@ describe('character_manage consolidated tool', () => {
                 characterType: 'pc'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.count).toBe(2);
             expect(parsed.filter).toBe('pc');
         });
@@ -271,7 +285,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'all'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.count).toBe(3);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -285,7 +299,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Delete Me'
             }, ctx);
-            characterId = JSON.parse(result.content[0].text).id;
+            characterId = extractJson(result.content[0].text).id;
         });
 
         it('should delete a character', async () => {
@@ -294,7 +308,7 @@ describe('character_manage consolidated tool', () => {
                 characterId
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
 
             // Verify deleted
@@ -302,7 +316,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'get',
                 characterId
             }, ctx);
-            const getParsed = JSON.parse(getResult.content[0].text);
+            const getParsed = extractJson(getResult.content[0].text) as any;
             expect(getParsed.error).toBe(true);
         });
 
@@ -312,7 +326,7 @@ describe('character_manage consolidated tool', () => {
                 characterId
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -327,7 +341,7 @@ describe('character_manage consolidated tool', () => {
                 name: 'XP Test',
                 level: 1
             }, ctx);
-            characterId = JSON.parse(result.content[0].text).id;
+            characterId = extractJson(result.content[0].text).id;
         });
 
         it('should add XP to character', async () => {
@@ -337,7 +351,7 @@ describe('character_manage consolidated tool', () => {
                 amount: 100
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.oldXp).toBe(0);
             expect(parsed.newXp).toBe(100);
             expect(parsed.canLevelUp).toBe(false);
@@ -350,7 +364,7 @@ describe('character_manage consolidated tool', () => {
                 amount: 300 // Level 2 threshold
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.newXp).toBe(300);
             expect(parsed.canLevelUp).toBe(true);
             expect(parsed.message).toContain('LEVEL UP');
@@ -363,7 +377,7 @@ describe('character_manage consolidated tool', () => {
                 amount: 50
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.newXp).toBe(50);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -376,7 +390,7 @@ describe('character_manage consolidated tool', () => {
                 level: 5
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.level).toBe(5);
             expect(parsed.xpRequiredForLevel).toBe(6500);
             expect(parsed.xpForNextLevel).toBe(14000);
@@ -389,7 +403,7 @@ describe('character_manage consolidated tool', () => {
                 level: 20
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.level).toBe(20);
             expect(parsed.maxLevel).toBe(true);
         });
@@ -400,7 +414,7 @@ describe('character_manage consolidated tool', () => {
                 level: 3
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.level).toBe(3);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -417,7 +431,7 @@ describe('character_manage consolidated tool', () => {
                 hp: 10,
                 maxHp: 10
             }, ctx);
-            characterId = JSON.parse(result.content[0].text).id;
+            characterId = extractJson(result.content[0].text).id;
         });
 
         it('should level up a character', async () => {
@@ -426,7 +440,7 @@ describe('character_manage consolidated tool', () => {
                 characterId
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.oldLevel).toBe(1);
             expect(parsed.newLevel).toBe(2);
             expect(parsed.message).toContain('Leveled up');
@@ -439,7 +453,7 @@ describe('character_manage consolidated tool', () => {
                 hpIncrease: 8
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.hpIncrease).toBe(8);
             expect(parsed.newMaxHp).toBe(18);
         });
@@ -451,7 +465,7 @@ describe('character_manage consolidated tool', () => {
                 targetLevel: 5
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.newLevel).toBe(5);
         });
 
@@ -470,7 +484,7 @@ describe('character_manage consolidated tool', () => {
                 targetLevel: 2
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('must be greater');
         });
@@ -481,7 +495,7 @@ describe('character_manage consolidated tool', () => {
                 characterId
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.newLevel).toBe(2);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
@@ -494,7 +508,7 @@ describe('character_manage consolidated tool', () => {
                 name: 'Fuzzy Test'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             console.log('FUZZY TEST RESULT:', JSON.stringify(parsed, null, 2));
             expect(parsed.success).toBe(true);
             expect(parsed._fuzzyMatch).toBeDefined();
@@ -505,7 +519,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Typo Update Test'
             }, ctx);
-            const characterId = JSON.parse(createResult.content[0].text).id;
+            const characterId = (extractJson(createResult.content[0].text) as any).id;
 
             const result = await handleCharacterManage({
                 action: 'updat',
@@ -513,7 +527,7 @@ describe('character_manage consolidated tool', () => {
                 hp: 5
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -524,7 +538,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'xyz'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe('invalid_action');
             expect(parsed.suggestions).toBeDefined();
             expect(parsed.message).toContain('Did you mean');
@@ -535,7 +549,7 @@ describe('character_manage consolidated tool', () => {
                 name: 'No Action'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('action');
         });
@@ -545,7 +559,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'create'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe('validation_error');
             expect(parsed.issues).toBeDefined();
         });
@@ -555,7 +569,7 @@ describe('character_manage consolidated tool', () => {
                 action: 'get'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe('validation_error');
         });
 
@@ -566,7 +580,7 @@ describe('character_manage consolidated tool', () => {
                 amount: 100
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('not found');
         });
