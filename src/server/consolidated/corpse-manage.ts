@@ -507,7 +507,23 @@ const router = createActionRouter({
 
 export const CorpseManageTool = {
     name: 'corpse_manage',
-    description: `Unified corpse and loot management. Actions: ${ACTIONS.join(', ')}. Aliases include: spawn→create, take→loot, skin→harvest, decay→advance_decay, table_create→loot_table_create.`,
+    description: `Manage corpses and looting after combat.
+
+💀 POST-COMBAT WORKFLOW:
+1. create - Corpse appears when enemy dies (characterId optional for ephemeral enemies)
+2. loot - Take items/gold from corpse
+3. harvest - Extract monster parts (alchemical components)
+
+📋 LOOT TABLES:
+- loot_table_create: Define drop tables for creature types
+- loot_table_roll: Generate random loot from table
+
+⏰ DECAY SYSTEM:
+- advance_decay: Progress corpse decay state
+- Corpses disappear after decay timer
+
+Actions: ${ACTIONS.join(', ')}
+Aliases: spawn→create, take→loot, skin→harvest`,
     inputSchema: z.object({
         action: z.string().describe(`Action to perform: ${ACTIONS.join(', ')}`),
         corpseId: z.string().optional().describe('Corpse ID'),

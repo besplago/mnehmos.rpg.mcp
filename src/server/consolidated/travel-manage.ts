@@ -551,17 +551,27 @@ export async function handleTravelManage(args: unknown, _ctx: SessionContext): P
 // Tool definition for registration
 export const TravelManageTool = {
     name: 'travel_manage',
-    description: `Consolidated travel and exploration management (3→1).
+    description: `Party-wide travel, loot collection, and rest operations.
 
-Actions:
-• travel - Move party to POI with discovery checks
-• loot - Collect all loot from encounter corpses
-• rest - Rest entire party (long or short)
+🚶 TRAVEL WORKFLOW:
+1. travel - Move party to POI with automatic discovery checks
+2. On arrival, random encounter chance based on danger level
+3. Use enterLocation: true to automatically enter the destination
 
-Examples:
-- Travel: { action: "travel", partyId: "...", poiId: "...", enterLocation: true }
-- Loot all: { action: "loot", encounterId: "...", partyId: "...", distributeEvenly: true }
-- Long rest: { action: "rest", partyId: "...", restType: "long" }
-- Short rest: { action: "rest", partyId: "...", restType: "short", hitDicePerMember: 2 }`,
+💰 POST-COMBAT LOOT:
+After combat ends, use loot action to:
+- Collect all items from corpses in encounter
+- distributeEvenly: true spreads gold/items across party
+- Auto-removes looted corpses
+
+⏰ PARTY REST:
+- Long rest (8h): Full HP + all spell slots restored
+- Short rest (1h): hitDicePerMember controls healing
+
+🔄 TYPICAL FLOW:
+combat_manage (end) → travel_manage (loot) → travel_manage (rest) → travel_manage (travel)
+
+Actions: travel, loot, rest
+Aliases: move→travel, collect→loot, camp→rest`,
     inputSchema: TravelManageInputSchema
 };

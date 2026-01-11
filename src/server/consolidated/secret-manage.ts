@@ -462,9 +462,29 @@ const router = createActionRouter({
 
 export const SecretManageTool = {
     name: 'secret_manage',
-    description: `Manage DM secrets (hidden information, plot twists, NPC motivations).
+    description: `Manage DM secrets - hidden information players shouldn't see.
+
+🔒 SECRET WORKFLOW:
+1. create - Define secret with publicDescription + secretDescription
+2. check_conditions - When game events occur, check if secrets should reveal
+3. reveal - Disclose secret to players (full or partial)
+4. check_leaks - Scan LLM output for accidental spoilers
+
+🎭 SECRET TYPES:
+- npc: Motivations, true identities
+- location: Traps, hidden rooms
+- item: Curses, true powers
+- plot: Twists, revelations
+- mechanic: Enemy weaknesses
+
+🛡️ SENSITIVITY LEVELS:
+low → medium → high → critical
+
+⚠️ IMPORTANT: Never include secretDescription in player-visible output!
+Use get_context to inject secrets into system prompt for DM-aware responses.
+
 Actions: ${ACTIONS.join(', ')}
-Aliases: new/add->create, fetch/read->get, remove->delete`,
+Aliases: new→create, reveal→disclose, check→check_conditions`,
     inputSchema: z.object({
         action: z.string().describe(`Action: ${ACTIONS.join(', ')}`),
         // All optional - validated per action

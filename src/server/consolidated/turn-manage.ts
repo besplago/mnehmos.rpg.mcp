@@ -447,15 +447,31 @@ const router = createActionRouter({
 
 export const TurnManageTool = {
     name: 'turn_manage',
-    description: `Turn-based strategy game management.
-Actions: init, get_status, submit_actions, mark_ready, poll_results
-Aliases: initialize->init, status->get_status, submit->submit_actions, ready->mark_ready, results->poll_results
+    description: `Turn-based strategy game lifecycle (multi-agent coordination).
 
-INIT: Initialize turn state for a world (once per world)
-GET_STATUS: Check current turn, phase, and which nations are ready
-SUBMIT_ACTIONS: Submit batched actions (claims, alliances, messages)
-MARK_READY: Signal done planning - auto-resolves if all nations ready
-POLL_RESULTS: Check if turn resolved and get events`,
+🎮 STRATEGY TURN CYCLE:
+1. init - Initialize turn state (once per world)
+2. get_status - Check current turn, phase, which nations ready
+3. submit_actions - Submit batched actions (claims, alliances, diplomacy)
+4. mark_ready - Signal planning complete
+5. poll_results - Get resolved turn events
+
+⚔️ MULTI-AGENT PLAY:
+Each AI agent controls one nation. Turn resolves automatically
+when ALL nations call mark_ready. Use get_status to see who's waiting.
+
+📋 ACTION TYPES (for submit_actions):
+- claim_region: Territorial expansion
+- propose_alliance: Diplomatic pact
+- send_message: Communication to other nations
+- trade_request: Resource exchange
+
+🔄 INTEGRATION:
+- Use strategy_manage for nation state queries
+- Use world_manage for world creation
+- Each turn triggers economy/conflict resolution
+
+Actions: init, get_status, submit_actions, mark_ready, poll_results`,
     inputSchema: z.object({
         action: z.string().describe(`Action: ${ACTIONS.join(', ')}`),
         worldId: z.string().describe('World ID'),

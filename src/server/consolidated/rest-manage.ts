@@ -229,9 +229,22 @@ const router = createActionRouter({
 
 export const RestManageTool = {
     name: 'rest_manage',
-    description: `Manage character rest mechanics.
-Actions: long (8hr, full HP + spell slots), short (1hr, hit dice healing)
-Aliases: long_rest/full->long, short_rest/quick->short`,
+    description: `Manage character rest mechanics (D&D 5e style).
+
+⏰ REST TYPES:
+- long (8 hours): Full HP restoration, all spell slots restored
+- short (1 hour): Spend hit dice to heal (roll d8 + CON per die)
+
+⚔️ COMBAT RESTRICTION:
+Cannot rest while in active combat encounter!
+
+✨ SPELLCASTING:
+- Full casters: All spell slots restored on long rest
+- Warlocks: Pact slots restore on SHORT rest
+- Concentration spells cleared on long rest
+
+Actions: long, short
+Aliases: long_rest/full→long, short_rest/quick→short`,
     inputSchema: z.object({
         action: z.string().describe('Action: long, short'),
         characterId: z.string().describe('Character ID'),

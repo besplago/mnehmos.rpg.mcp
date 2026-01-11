@@ -999,19 +999,27 @@ export async function handleSpawnManage(args: unknown, ctx: SessionContext): Pro
 // Tool definition for registration
 export const SpawnManageTool = {
     name: 'spawn_manage',
-    description: `Consolidated spawn management (5→1).
+    description: `Create game entities from templates - characters, locations, encounters.
 
-Actions:
-• spawn_character - Create character from template with equipment
-• spawn_location - Create populated location with NPCs and rooms
-• spawn_encounter - Create combat encounter from preset or random
-• spawn_preset_location - Spawn complete location from preset at coordinates
-• spawn_tactical - Setup tactical combat with positioned participants
+🎯 QUICK START:
+- spawn_character: Single creature from template (goblin, orc, bandit)
+- spawn_encounter: Full combat from preset or random selection
 
-Examples:
-- Spawn goblin: { action: "spawn_character", template: "goblin", position: "5,5" }
-- Spawn tavern: { action: "spawn_preset_location", preset: "generic_tavern", worldId: "...", x: 50, y: 75 }
-- Random encounter: { action: "spawn_encounter", random: true, difficulty: "medium", tags: ["undead"] }
-- Tactical setup: { action: "spawn_tactical", participants: [...], terrain: { pattern: "arena" } }`,
+🏠 LOCATIONS:
+- spawn_location: Custom populated location with NPCs and rooms
+- spawn_preset_location: Pre-built location (tavern, dungeon entrance) at world coordinates
+
+⚔️ TACTICAL COMBAT:
+- spawn_tactical: Custom combat setup with positioned participants and terrain patterns
+
+📋 TEMPLATES: goblin, orc, skeleton, zombie, bandit, wolf, bear, etc.
+Terrain patterns: arena, canyon, river_valley, mountain_pass, maze
+
+🔄 WORKFLOW:
+1. spawn_encounter/spawn_tactical creates combat → Returns encounterId
+2. Use combat_action for attacks, combat_map for visualization
+3. Use corpse_manage after combat ends
+
+Actions: spawn_character, spawn_location, spawn_encounter, spawn_preset_location, spawn_tactical`,
     inputSchema: SpawnManageInputSchema
 };

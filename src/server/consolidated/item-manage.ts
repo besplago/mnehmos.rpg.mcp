@@ -232,7 +232,26 @@ const router = createActionRouter({
 
 export const ItemManageTool = {
     name: 'item_manage',
-    description: `Unified item template management. Actions: ${ACTIONS.join(', ')}. Aliases: new/add→create, fetch→get, all→list, query→search, modify→update, remove→delete.`,
+    description: `Manage item templates (definitions, not instances).
+
+📦 ITEM WORKFLOW:
+1. create - Define a new item template (weapon, armor, consumable, etc.)
+2. Then use inventory_manage to give items to characters
+
+🗡️ ITEM TYPES:
+- weapon: Attack bonuses, damage dice in properties
+- armor: AC bonuses, baseAC for armor class calculation
+- consumable: One-use items (potions, scrolls)
+- quest/misc: Story items and general goods
+
+⚔️ WEAPON PROPERTIES EXAMPLE:
+{ attackBonus: 1, damageDice: "1d8", damageType: "slashing" }
+
+🛡️ ARMOR PROPERTIES EXAMPLE:
+{ baseAC: 14, maxDexBonus: 2 }
+
+Actions: ${ACTIONS.join(', ')}
+Aliases: new→create, fetch→get, query→search`,
     inputSchema: z.object({
         action: z.string().describe(`Action to perform: ${ACTIONS.join(', ')}`),
         itemId: z.string().optional().describe('Item ID (for get, update, delete)'),

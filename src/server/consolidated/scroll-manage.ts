@@ -386,9 +386,25 @@ const router = createActionRouter({
 
 export const ScrollManageTool = {
     name: 'scroll_manage',
-    description: `Manage spell scrolls - creation, identification, and usage.
-Actions: use (cast from scroll), create (make scroll), identify (Arcana/Identify), get_dc, get (details), check (usability)
-Aliases: cast->use, craft/make->create, id/read->identify, dc->get_dc, details->get, can_use->check`,
+    description: `Manage spell scrolls - D&D 5e rules for creation, identification, and usage.
+
+📜 SCROLL WORKFLOW:
+1. create - DM creates scroll item (spell, level, DC, attack bonus)
+2. identify - Character identifies via Arcana check or Identify spell
+3. check - Check if character can use (spell on class list?)
+4. use - Cast from scroll (consumed on use)
+
+🎲 USAGE RULES:
+- Spell on your class list: Auto-success, scroll consumed
+- Spell NOT on list: Arcana check DC 10 + spell level
+- Failed check: Scroll wasted!
+
+📊 SCROLL STATS BY LEVEL:
+Level 0-1: DC 13, +5 attack | Level 2-3: DC 13-15, +5-7
+Level 4-5: DC 15-17, +7-9 | Level 6+: DC 17+, +9+
+
+Actions: use, create, identify, get_dc, get, check
+Aliases: cast→use, craft→create, id→identify`,
     inputSchema: z.object({
         action: z.string().describe('Action: use, create, identify, get_dc, get, check'),
         characterId: z.string().optional().describe('Character ID (for use, identify, get_dc, check)'),

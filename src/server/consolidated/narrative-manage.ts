@@ -520,9 +520,26 @@ const router = createActionRouter({
 
 export const NarrativeManageTool = {
     name: 'narrative_manage',
-    description: `Manage narrative notes (plot threads, canonical moments, NPC voices, foreshadowing, session logs).
-Actions: add (create note), search (filter/find), update, get, delete, get_context (LLM injection)
-Aliases: create/new->add, find/list->search, edit->update, remove->delete, context->get_context`,
+    description: `Manage narrative notes for AI-driven storytelling.
+
+📝 NOTE TYPES:
+- plot_thread: Active storylines (urgency, hooks, resolution conditions)
+- canonical_moment: Key events (quotes, memorable scenes)
+- npc_voice: Character voice notes (speech patterns, mannerisms, secrets)
+- foreshadowing: Hints about future reveals (what it foreshadows, trigger)
+- session_log: Session summaries (XP, attendance, events)
+
+🎯 AI WORKFLOW:
+1. add - Create notes during play as events happen
+2. get_context - Inject into system prompt for informed storytelling
+3. update - Mark plot_threads as 'resolved' when completed
+
+👀 VISIBILITY:
+- dm_only: Only DM sees (default) - secrets, NPC true motivations
+- player_visible: Can be shown to players - session logs, known lore
+
+Actions: add, search, update, get, delete, get_context
+Aliases: create→add, find→search, context→get_context`,
     inputSchema: z.object({
         action: z.string().describe('Action: add, search, update, get, delete, get_context'),
         worldId: z.string().optional().describe('World ID (required for add, search, get_context)'),

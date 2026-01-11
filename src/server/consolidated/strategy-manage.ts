@@ -352,16 +352,35 @@ const router = createActionRouter({
 
 export const StrategyManageTool = {
     name: 'strategy_manage',
-    description: `Grand strategy and nation management for multi-agent games.
-Actions: create_nation, get_state, propose_alliance, claim_region, resolve_turn, list_nations
-Aliases: new_nation->create_nation, alliance->propose_alliance, claim->claim_region
+    description: `Grand strategy nation management for multi-agent games.
 
-CREATE_NATION: Create a new nation with traits and resources
-GET_STATE: Get nation state (public, private, or fog_of_war view)
-PROPOSE_ALLIANCE: Propose diplomatic alliance
-CLAIM_REGION: Assert territorial claim
-RESOLVE_TURN: Process turn (economy, conflicts)
-LIST_NATIONS: List all nations in a world`,
+🏰 NATION SETUP:
+1. create_nation - Define nation with ideology, traits, resources
+2. get_state - Query nation state (public/private/fog_of_war view)
+3. list_nations - See all nations in world
+
+🎭 NATION TRAITS:
+- ideology: democracy | autocracy | theocracy | tribal
+- aggression: 0-100 (affects AI behavior)
+- trust: 0-100 (alliance reliability)
+- paranoia: 0-100 (defensive posture)
+
+💰 STARTING RESOURCES:
+- food: Population growth
+- metal: Military production
+- oil: Advanced units/vehicles
+
+🤝 DIPLOMACY:
+- propose_alliance: Offer pact to another nation
+- claim_region: Assert territorial expansion
+
+⚔️ TURN RESOLUTION:
+Use turn_manage for turn lifecycle. resolve_turn processes:
+- Resource production
+- Territory conflicts
+- Alliance effects
+
+Actions: create_nation, get_state, propose_alliance, claim_region, resolve_turn, list_nations`,
     inputSchema: z.object({
         action: z.string().describe(`Action: ${ACTIONS.join(', ')}`),
         // Create nation params

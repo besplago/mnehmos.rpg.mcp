@@ -295,15 +295,38 @@ const router = createActionRouter({
 
 export const MathManageTool = {
     name: 'math_manage',
-    description: `Mathematical operations for RPG systems.
-Actions: roll, probability, solve, simplify, projectile
-Aliases: dice->roll, prob->probability, equation->solve, physics->projectile
+    description: `Mathematical operations for RPG mechanics.
 
-ROLL: Roll dice with notation (2d6+3, 4d6dl1, 2d20kh1, 2d6!)
-PROBABILITY: Calculate odds of hitting target values
-SOLVE: Solve algebraic equations for variables
-SIMPLIFY: Simplify algebraic expressions
-PROJECTILE: Calculate projectile motion physics`,
+🎲 DICE ROLLING (roll):
+Standard notation plus special modifiers:
+- 2d6+3: Basic roll with modifier
+- 4d6dl1: Drop lowest 1 (stat generation)
+- 2d20kh1: Keep highest 1 (advantage)
+- 2d6!: Exploding dice (reroll on max)
+- 8d6r1: Reroll 1s once
+
+📊 PROBABILITY (probability):
+Calculate odds before important rolls:
+- target: Number to hit
+- comparison: gte|lte|eq|gt|lt
+
+🧮 ALGEBRA (solve, simplify):
+- solve: Find variable value (damage = base + modifier)
+- simplify: Reduce expressions
+
+🏹 PROJECTILE PHYSICS:
+Calculate ranged attack trajectories:
+- velocity: Initial speed (ft/s)
+- angle: Launch angle (degrees)
+- height: Initial height (ft)
+- gravity: Default 32.2 ft/s²
+
+💡 WHEN TO USE:
+- Use roll for all dice-based mechanics
+- Use probability to analyze player options
+- Use projectile for siege weapons, falling objects
+
+Actions: roll, probability, solve, simplify, projectile`,
     inputSchema: z.object({
         action: z.string().describe(`Action: ${ACTIONS.join(', ')}`),
         // Roll params

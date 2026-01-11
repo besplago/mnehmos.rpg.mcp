@@ -263,9 +263,23 @@ const router = createActionRouter({
 
 export const ConcentrationManageTool = {
     name: 'concentration_manage',
-    description: `Manage spell concentration mechanics.
-Actions: check_save (CON save after damage), break (end concentration), get (query state), check_duration, check_auto
-Aliases: save/damage->check_save, end/stop->break, state/status->get`,
+    description: `Manage spell concentration (D&D 5e rules).
+
+🎯 WHEN TO USE:
+- After damage: check_save (CON save DC = max(10, damage/2))
+- After incapacitation/death: check_auto (auto-break)
+- Before new concentration spell: break (new_spell reason)
+- Each round: check_duration (for time-limited spells)
+
+⚔️ COMBAT INTEGRATION:
+When a concentrating character takes damage, ALWAYS call check_save!
+The engine handles the CON save automatically.
+
+🔮 SPELL EXAMPLES (require concentration):
+Hold Person, Bless, Haste, Hex, Hunter's Mark, Spirit Guardians
+
+Actions: check_save, break, get, check_duration, check_auto
+Aliases: save/damage→check_save, end/stop→break, state→get`,
     inputSchema: z.object({
         action: z.string().describe('Action: check_save, break, get, check_duration, check_auto'),
         characterId: z.string().describe('Character ID'),

@@ -367,15 +367,24 @@ export async function handleSessionManage(args: unknown, ctx: SessionContext): P
 // Tool definition for registration
 export const SessionManageTool = {
     name: 'session_manage',
-    description: `Consolidated session management (2→1).
+    description: `Session lifecycle and narrative context for AI game mastering.
 
-Actions:
-• initialize - Start or resume a game session with world and party
-• get_context - Get comprehensive narrative context for AI decision-making
+🎮 SESSION WORKFLOW:
+1. initialize - Start/resume session (loads or creates world + party)
+2. get_context - Get comprehensive context for AI decision-making
 
-Examples:
-- New session: { action: "initialize", createNew: true, worldName: "Faerun", partyName: "Heroes" }
-- Resume: { action: "initialize", worldId: "...", partyId: "..." }
-- Get context: { action: "get_context", partyId: "...", worldId: "...", narrativeLimit: 10 }`,
+📋 CONTEXT INCLUDES:
+- Party members with HP, level, class
+- Active quests and current objectives
+- World state (time, location, weather)
+- Recent narrative events
+- Active combat status
+
+💡 AI USAGE:
+Call get_context at conversation start to understand game state.
+Inject context into system prompt for informed storytelling.
+
+Actions: initialize, get_context
+Aliases: init/start→initialize, context/narrative→get_context`,
     inputSchema: SessionManageInputSchema
 };

@@ -460,23 +460,28 @@ const router = createActionRouter({
 
 export const NpcManageTool = {
     name: 'npc_manage',
-    description: `Manage NPC relationships, memories, and social interactions.
-Actions: get_relationship, update_relationship, record_memory, get_history, get_recent, get_context, interact
-Aliases: relationship→get_relationship, remember→record_memory, speak→interact
+    description: `Track NPC relationships, memories, and social interactions.
 
-RELATIONSHIP LEVELS:
-- Familiarity: stranger→acquaintance→friend→close_friend/rival/enemy
-- Disposition: hostile→unfriendly→neutral→friendly→helpful
+🎭 SOCIAL AI WORKFLOW:
+1. get_context - Before NPC dialogue, get relationship + memory summary
+2. Inject into system prompt for informed roleplay
+3. record_memory - After significant interactions
+4. update_relationship - When familiarity/disposition changes
 
-MEMORY IMPORTANCE:
-- low: casual chat
-- medium: standard interaction
-- high: plot-relevant
-- critical: game-changing
+📊 RELATIONSHIP PROGRESSION:
+Familiarity: stranger → acquaintance → friend → close_friend (or rival/enemy)
+Disposition: hostile → unfriendly → neutral → friendly → helpful
 
-SOCIAL INTERACTION:
-- interact action handles hearing range, stealth vs perception, memory recording
-- Volume: WHISPER, TALK, SHOUT`,
+🗣️ SPATIAL INTERACTIONS:
+- interact: Volume affects who hears (WHISPER/TALK/SHOUT)
+- Eavesdroppers roll Stealth vs Perception
+- Memories auto-recorded for participants
+
+💡 AI TIP:
+Always call get_context before generating NPC dialogue!
+Response includes formatted summary for prompt injection.
+
+Actions: get_relationship, update_relationship, record_memory, get_history, get_recent, get_context, interact`,
     inputSchema: z.object({
         action: z.string().describe(`Action: ${ACTIONS.join(', ')}`),
         characterId: z.string().optional().describe('ID of the player character'),
