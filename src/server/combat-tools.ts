@@ -541,7 +541,7 @@ Example (use real UUID from context for player character!):
                 id: z.string(),
                 name: z.string(),
                 initiativeBonus: z.number().int(),
-                hp: z.number().int().positive(),
+                hp: z.number().int().nonnegative(), // Allow 0 HP for dying characters
                 maxHp: z.number().int().positive(),
                 isEnemy: z.boolean().optional().describe('Whether this is an enemy (auto-detected if not set)'),
                 conditions: z.array(z.string()).default([]),

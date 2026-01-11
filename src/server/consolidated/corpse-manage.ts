@@ -6,7 +6,6 @@
 import { z } from 'zod';
 import { createActionRouter, ActionDefinition, McpResponse } from '../../utils/action-router.js';
 import { CorpseRepository } from '../../storage/repos/corpse.repo.js';
-import { LootTableSchema } from '../../schema/corpse.js';
 import { getDb } from '../../storage/index.js';
 import { SessionContext } from '../types.js';
 import { RichFormatter } from '../utils/formatter.js';
@@ -420,7 +419,25 @@ const definitions: Record<CorpseAction, ActionDefinition> = {
         handler: async (params: z.infer<typeof LootTableCreateSchema>) => {
             const repo = getRepo();
             const { action, ...tableData } = params;
-            const table = repo.createLootTable(tableData);
+
+            // Transform entries to convert undefined to null for type compatibility
+            type LootEntry = z.infer<typeof LootTableEntrySchema>;
+            const normalizeEntry = (entry: LootEntry) => ({
+                weight: entry.weight,
+                itemId: entry.itemId ?? null,
+                itemTemplateId: entry.itemTemplateId ?? null,
+                itemName: entry.itemName,
+                quantity: entry.quantity,
+                conditions: entry.conditions
+            });
+
+            const normalizedData = {
+                ...tableData,
+                guaranteedDrops: tableData.guaranteedDrops.map(normalizeEntry),
+                randomDrops: tableData.randomDrops.map(normalizeEntry)
+            };
+
+            const table = repo.createLootTable(normalizedData);
             return {
                 success: true,
                 lootTable: table,

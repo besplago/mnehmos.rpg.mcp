@@ -167,7 +167,7 @@ async function handleCreate(args: z.infer<typeof CreateSchema>): Promise<object>
         scrollDC: scroll.properties?.scrollDC,
         scrollAttackBonus: scroll.properties?.scrollAttackBonus,
         value: scroll.value,
-        rarity: scroll.rarity,
+        rarity: scroll.properties?.rarity || 'common',
         message: `Created scroll of ${args.spellName} (Level ${args.spellLevel})`
     };
 }
