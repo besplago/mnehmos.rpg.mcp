@@ -1,0 +1,574 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { handleCharacterManage, CharacterManageTool } from '../../../src/server/consolidated/character-manage.js';
+import { getDb, closeDb } from '../../../src/storage/index.js';
+import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';
+import { randomUUID } from 'crypto';
+
+describe('character_manage consolidated tool', () => {
+    let db: ReturnType<typeof getDb>;
+    let characterRepo: CharacterRepository;
+
+    beforeEach(() => {
+        closeDb();
+        db = getDb(':memory:');
+        characterRepo = new CharacterRepository(db);
+    });
+
+    const ctx = { worldId: '', partyId: '', encounterContext: null };
+
+    describe('tool definition', () => {
+        it('should have correct name and description', () => {
+            expect(CharacterManageTool.name).toBe('character_manage');
+            expect(CharacterManageTool.description).toContain('character');
+        });
+
+        it('should list all actions in description', () => {
+            expect(CharacterManageTool.description).toContain('create');
+            expect(CharacterManageTool.description).toContain('get');
+            expect(CharacterManageTool.description).toContain('update');
+            expect(CharacterManageTool.description).toContain('list');
+            expect(CharacterManageTool.description).toContain('delete');
+            expect(CharacterManageTool.description).toContain('add_xp');
+            expect(CharacterManageTool.description).toContain('level_up');
+        });
+    });
+
+    describe('action: create', () => {
+        it('should create a character with minimal params', async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Test Hero'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+            expect(parsed.id).toBeDefined();
+            expect(parsed.name).toBe('Test Hero');
+            expect(parsed.characterType).toBe('pc');
+            expect(parsed.level).toBe(1);
+        });
+
+        it('should create a character with full params', async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Valeros',
+                class: 'Fighter',
+                race: 'Human',
+                level: 5,
+                hp: 45,
+                maxHp: 45,
+                ac: 18,
+                stats: { str: 16, dex: 14, con: 14, int: 10, wis: 12, cha: 10 },
+                characterType: 'pc'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+            expect(parsed.name).toBe('Valeros');
+            expect(parsed.characterClass).toBe('Fighter');
+            expect(parsed.race).toBe('Human');
+            expect(parsed.level).toBe(5);
+        });
+
+        it('should provision equipment by default for PCs', async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Test Wizard',
+                class: 'Wizard',
+                level: 1
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            // Should have _provisioning info
+            expect(parsed._provisioning).toBeDefined();
+        });
+
+        it('should skip provisioning when provisionEquipment is false', async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Simple NPC',
+                provisionEquipment: false
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed._provisioning).toBeUndefined();
+        });
+
+        it('should accept alias "new"', async () => {
+            const result = await handleCharacterManage({
+                action: 'new',
+                name: 'Alias Test'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+
+        it('should accept alias "spawn"', async () => {
+            const result = await handleCharacterManage({
+                action: 'spawn',
+                name: 'Spawn Test'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+        });
+    });
+
+    describe('action: get', () => {
+        let characterId: string;
+
+        beforeEach(async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Get Test Hero',
+                class: 'Rogue',
+                level: 3
+            }, ctx);
+            characterId = JSON.parse(result.content[0].text).id;
+        });
+
+        it('should get character by ID', async () => {
+            const result = await handleCharacterManage({
+                action: 'get',
+                characterId
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.name).toBe('Get Test Hero');
+            expect(parsed.characterClass).toBe('Rogue');
+            expect(parsed.level).toBe(3);
+        });
+
+        it('should return error for non-existent character', async () => {
+            const result = await handleCharacterManage({
+                action: 'get',
+                characterId: randomUUID()
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.error).toBe(true);
+            expect(parsed.message).toContain('not found');
+        });
+
+        it('should accept alias "fetch"', async () => {
+            const result = await handleCharacterManage({
+                action: 'fetch',
+                characterId
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.name).toBe('Get Test Hero');
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+    });
+
+    describe('action: update', () => {
+        let characterId: string;
+
+        beforeEach(async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Update Test',
+                hp: 20,
+                maxHp: 20,
+                level: 1
+            }, ctx);
+            characterId = JSON.parse(result.content[0].text).id;
+        });
+
+        it('should update character properties', async () => {
+            const result = await handleCharacterManage({
+                action: 'update',
+                characterId,
+                name: 'Updated Name',
+                hp: 15,
+                level: 2
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+            expect(parsed.name).toBe('Updated Name');
+            expect(parsed.hp).toBe(15);
+            expect(parsed.level).toBe(2);
+        });
+
+        it('should add conditions', async () => {
+            const result = await handleCharacterManage({
+                action: 'update',
+                characterId,
+                addConditions: [{ name: 'Poisoned', duration: 3 }]
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.conditions).toBeDefined();
+            expect(parsed.conditions.some((c: any) => c.name === 'Poisoned')).toBe(true);
+        });
+
+        it('should remove conditions', async () => {
+            // First add a condition
+            await handleCharacterManage({
+                action: 'update',
+                characterId,
+                addConditions: [{ name: 'Blinded' }]
+            }, ctx);
+
+            // Then remove it
+            const result = await handleCharacterManage({
+                action: 'update',
+                characterId,
+                removeConditions: ['Blinded']
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.conditions.some((c: any) => c.name === 'Blinded')).toBe(false);
+        });
+
+        it('should accept alias "modify"', async () => {
+            const result = await handleCharacterManage({
+                action: 'modify',
+                characterId,
+                ac: 15
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.ac).toBe(15);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+    });
+
+    describe('action: list', () => {
+        beforeEach(async () => {
+            await handleCharacterManage({ action: 'create', name: 'PC 1', characterType: 'pc' }, ctx);
+            await handleCharacterManage({ action: 'create', name: 'PC 2', characterType: 'pc' }, ctx);
+            await handleCharacterManage({ action: 'create', name: 'Enemy 1', characterType: 'enemy' }, ctx);
+        });
+
+        it('should list all characters', async () => {
+            const result = await handleCharacterManage({
+                action: 'list'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.count).toBe(3);
+            expect(parsed.characters).toHaveLength(3);
+        });
+
+        it('should filter by character type', async () => {
+            const result = await handleCharacterManage({
+                action: 'list',
+                characterType: 'pc'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.count).toBe(2);
+            expect(parsed.filter).toBe('pc');
+        });
+
+        it('should accept alias "all"', async () => {
+            const result = await handleCharacterManage({
+                action: 'all'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.count).toBe(3);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+    });
+
+    describe('action: delete', () => {
+        let characterId: string;
+
+        beforeEach(async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Delete Me'
+            }, ctx);
+            characterId = JSON.parse(result.content[0].text).id;
+        });
+
+        it('should delete a character', async () => {
+            const result = await handleCharacterManage({
+                action: 'delete',
+                characterId
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+
+            // Verify deleted
+            const getResult = await handleCharacterManage({
+                action: 'get',
+                characterId
+            }, ctx);
+            const getParsed = JSON.parse(getResult.content[0].text);
+            expect(getParsed.error).toBe(true);
+        });
+
+        it('should accept alias "remove"', async () => {
+            const result = await handleCharacterManage({
+                action: 'remove',
+                characterId
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+    });
+
+    describe('action: add_xp', () => {
+        let characterId: string;
+
+        beforeEach(async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'XP Test',
+                level: 1
+            }, ctx);
+            characterId = JSON.parse(result.content[0].text).id;
+        });
+
+        it('should add XP to character', async () => {
+            const result = await handleCharacterManage({
+                action: 'add_xp',
+                characterId,
+                amount: 100
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.oldXp).toBe(0);
+            expect(parsed.newXp).toBe(100);
+            expect(parsed.canLevelUp).toBe(false);
+        });
+
+        it('should signal level up when threshold reached', async () => {
+            const result = await handleCharacterManage({
+                action: 'add_xp',
+                characterId,
+                amount: 300 // Level 2 threshold
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.newXp).toBe(300);
+            expect(parsed.canLevelUp).toBe(true);
+            expect(parsed.message).toContain('LEVEL UP');
+        });
+
+        it('should accept alias "xp"', async () => {
+            const result = await handleCharacterManage({
+                action: 'xp',
+                characterId,
+                amount: 50
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.newXp).toBe(50);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+    });
+
+    describe('action: get_progression', () => {
+        it('should return XP requirements for a level', async () => {
+            const result = await handleCharacterManage({
+                action: 'get_progression',
+                level: 5
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.level).toBe(5);
+            expect(parsed.xpRequiredForLevel).toBe(6500);
+            expect(parsed.xpForNextLevel).toBe(14000);
+            expect(parsed.xpToNext).toBe(7500);
+        });
+
+        it('should handle max level', async () => {
+            const result = await handleCharacterManage({
+                action: 'get_progression',
+                level: 20
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.level).toBe(20);
+            expect(parsed.maxLevel).toBe(true);
+        });
+
+        it('should accept alias "progression"', async () => {
+            const result = await handleCharacterManage({
+                action: 'progression',
+                level: 3
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.level).toBe(3);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+    });
+
+    describe('action: level_up', () => {
+        let characterId: string;
+
+        beforeEach(async () => {
+            const result = await handleCharacterManage({
+                action: 'create',
+                name: 'Level Up Test',
+                level: 1,
+                hp: 10,
+                maxHp: 10
+            }, ctx);
+            characterId = JSON.parse(result.content[0].text).id;
+        });
+
+        it('should level up a character', async () => {
+            const result = await handleCharacterManage({
+                action: 'level_up',
+                characterId
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.oldLevel).toBe(1);
+            expect(parsed.newLevel).toBe(2);
+            expect(parsed.message).toContain('Leveled up');
+        });
+
+        it('should increase HP when specified', async () => {
+            const result = await handleCharacterManage({
+                action: 'level_up',
+                characterId,
+                hpIncrease: 8
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.hpIncrease).toBe(8);
+            expect(parsed.newMaxHp).toBe(18);
+        });
+
+        it('should level up to specific target level', async () => {
+            const result = await handleCharacterManage({
+                action: 'level_up',
+                characterId,
+                targetLevel: 5
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.newLevel).toBe(5);
+        });
+
+        it('should reject lower target level', async () => {
+            // First level up to 3
+            await handleCharacterManage({
+                action: 'level_up',
+                characterId,
+                targetLevel: 3
+            }, ctx);
+
+            // Try to set to 2 (should fail)
+            const result = await handleCharacterManage({
+                action: 'level_up',
+                characterId,
+                targetLevel: 2
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.error).toBe(true);
+            expect(parsed.message).toContain('must be greater');
+        });
+
+        it('should accept alias "levelup"', async () => {
+            const result = await handleCharacterManage({
+                action: 'levelup',
+                characterId
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.newLevel).toBe(2);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+    });
+
+    describe('fuzzy matching', () => {
+        it('should match typo "creat" to "create"', async () => {
+            const result = await handleCharacterManage({
+                action: 'creat',
+                name: 'Fuzzy Test'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            console.log('FUZZY TEST RESULT:', JSON.stringify(parsed, null, 2));
+            expect(parsed.success).toBe(true);
+            expect(parsed._fuzzyMatch).toBeDefined();
+        });
+
+        it('should match typo "updat" to "update"', async () => {
+            const createResult = await handleCharacterManage({
+                action: 'create',
+                name: 'Typo Update Test'
+            }, ctx);
+            const characterId = JSON.parse(createResult.content[0].text).id;
+
+            const result = await handleCharacterManage({
+                action: 'updat',
+                characterId,
+                hp: 5
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.success).toBe(true);
+        });
+    });
+
+    describe('error handling', () => {
+        it('should return guiding error for invalid action', async () => {
+            const result = await handleCharacterManage({
+                action: 'xyz'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.error).toBe('invalid_action');
+            expect(parsed.suggestions).toBeDefined();
+            expect(parsed.message).toContain('Did you mean');
+        });
+
+        it('should return error for missing action', async () => {
+            const result = await handleCharacterManage({
+                name: 'No Action'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.error).toBe(true);
+            expect(parsed.message).toContain('action');
+        });
+
+        it('should return validation error for missing name on create', async () => {
+            const result = await handleCharacterManage({
+                action: 'create'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.error).toBe('validation_error');
+            expect(parsed.issues).toBeDefined();
+        });
+
+        it('should return validation error for missing characterId on get', async () => {
+            const result = await handleCharacterManage({
+                action: 'get'
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.error).toBe('validation_error');
+        });
+
+        it('should return error for non-existent character on add_xp', async () => {
+            const result = await handleCharacterManage({
+                action: 'add_xp',
+                characterId: randomUUID(),
+                amount: 100
+            }, ctx);
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.error).toBe(true);
+            expect(parsed.message).toContain('not found');
+        });
+    });
+});
