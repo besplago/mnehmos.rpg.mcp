@@ -296,9 +296,22 @@ export const CombatActionTool = {
     name: 'combat_action',
     description: `Execute combat actions during an encounter. Actions: ${ACTIONS.join(', ')}.
 
-⚔️ OFFENSIVE:
-- attack - Make an attack roll against a target
-- cast_spell - Cast a spell (single target or AoE)
+🎯 SELF-CONTAINED - This tool handles EVERYTHING for combat:
+- Rolls dice internally (d20 for attacks, damage dice, saves)
+- Auto-calculates attack bonus from character stats if not provided
+- Auto-calculates damage from character stats if not provided
+- Applies damage/healing and syncs HP to character database
+- Tracks action economy (action/bonus/reaction)
+
+DO NOT use math_manage for combat rolls - use this tool instead!
+
+⚔️ ATTACK (minimal call):
+{ action: "attack", encounterId, actorId, targetId }
+Everything else auto-calculated. Returns: roll result, damage dealt, HP change.
+
+🔮 CAST_SPELL (minimal call):
+{ action: "cast_spell", encounterId, actorId, spellName, targetId }
+Validates spell, rolls damage, applies effects, handles saves - all automatic.
 
 💚 SUPPORT:
 - heal - Restore HP to a target
@@ -313,10 +326,7 @@ export const CombatActionTool = {
 - dodge - Disadvantage on attacks against you, advantage on DEX saves
 - ready - Prepare an action with a trigger
 
-Aliases: hit/strike→attack, cast/spell→cast_spell, sprint→dash, evade→dodge.
-
-Use combat_manage for encounter lifecycle (create, end, advance).
-Use combat_map for terrain and visualization.`,
+Aliases: hit/strike→attack, cast/spell→cast_spell, sprint→dash, evade→dodge.`,
     inputSchema: z.object({
         action: z.string().describe(`Action: ${ACTIONS.join(', ')}`),
         encounterId: z.string().describe('Encounter ID'),

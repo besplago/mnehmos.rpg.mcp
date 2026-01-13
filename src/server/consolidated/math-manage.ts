@@ -297,7 +297,19 @@ export const MathManageTool = {
     name: 'math_manage',
     description: `Mathematical operations for RPG mechanics.
 
-🎲 DICE ROLLING (roll):
+⚠️ COMBAT REDIRECT - DO NOT USE FOR:
+- Attack rolls → Use combat_action { action: "attack" } instead
+- Spell damage → Use combat_action { action: "cast_spell" } instead
+- Saving throws in combat → combat_action handles these automatically
+The combat_action tool rolls dice, calculates damage, and applies HP changes in one call.
+
+🎲 DICE ROLLING (roll) - For NON-COMBAT situations:
+- Skill checks outside combat
+- Stat generation (4d6dl1)
+- Random tables/loot
+- NPC behavior rolls
+- Exploration/navigation
+
 Standard notation plus special modifiers:
 - 2d6+3: Basic roll with modifier
 - 4d6dl1: Drop lowest 1 (stat generation)
@@ -320,11 +332,6 @@ Calculate ranged attack trajectories:
 - angle: Launch angle (degrees)
 - height: Initial height (ft)
 - gravity: Default 32.2 ft/s²
-
-💡 WHEN TO USE:
-- Use roll for all dice-based mechanics
-- Use probability to analyze player options
-- Use projectile for siege weapons, falling objects
 
 Actions: roll, probability, solve, simplify, projectile`,
     inputSchema: z.object({
