@@ -10,6 +10,8 @@ import { matchAction, isGuidingError } from '../../utils/fuzzy-enum.js';
 import { RichFormatter } from '../utils/formatter.js';
 import { getDb } from '../../storage/index.js';
 import { CharacterRepository } from '../../storage/repos/character.repo.js';
+import { InventoryRepository } from '../../storage/repos/inventory.repo.js';
+import { ItemRepository } from '../../storage/repos/item.repo.js';
 import { SessionContext } from '../types.js';
 import { buildConsolidatedRegistry } from '../consolidated-registry.js';
 
@@ -334,44 +336,52 @@ async function handleDistributeItems(input: BatchManageInput, _ctx: SessionConte
         };
     }
 
-    const { db } = ensureDb();
+    const { db, charRepo } = ensureDb();
+    const inventoryRepo = new InventoryRepository(db);
+    const itemRepo = new ItemRepository(db);
 
     const distributions: any[] = [];
     const errors: string[] = [];
 
     for (const dist of input.distributions) {
         try {
-            const charStmt = db.prepare('SELECT * FROM characters WHERE id = ?');
-            const character = charStmt.get(dist.characterId) as any;
+            const character = charRepo.findById(dist.characterId);
 
             if (!character) {
                 errors.push(`Character not found: ${dist.characterId}`);
                 continue;
             }
 
-            // Parse existing inventory
-            let inventory: string[] = [];
-            if (character.inventory) {
-                try {
-                    inventory = JSON.parse(character.inventory);
-                } catch {
-                    inventory = [];
+            const itemsAdded: string[] = [];
+            const itemErrors: string[] = [];
+
+            for (const itemId of dist.items) {
+                // Verify item exists in the items table
+                const item = itemRepo.findById(itemId);
+                if (!item) {
+                    itemErrors.push(`Item not found: ${itemId}`);
+                    continue;
                 }
+
+                // Use the proper repository method to add item
+                inventoryRepo.addItem(dist.characterId, itemId, 1);
+                itemsAdded.push(item.name);
             }
 
-            // Add new items
-            inventory.push(...dist.items);
+            if (itemsAdded.length > 0) {
+                // Get updated inventory size
+                const inventory = inventoryRepo.getInventory(dist.characterId);
+                distributions.push({
+                    characterId: dist.characterId,
+                    characterName: character.name,
+                    itemsGiven: itemsAdded,
+                    newInventorySize: inventory.items.length
+                });
+            }
 
-            // Update character inventory
-            const updateStmt = db.prepare('UPDATE characters SET inventory = ?, updated_at = ? WHERE id = ?');
-            updateStmt.run(JSON.stringify(inventory), new Date().toISOString(), dist.characterId);
-
-            distributions.push({
-                characterId: dist.characterId,
-                characterName: character.name,
-                itemsGiven: dist.items,
-                newInventorySize: inventory.length
-            });
+            if (itemErrors.length > 0) {
+                errors.push(...itemErrors.map(e => `${character.name}: ${e}`));
+            }
         } catch (err: any) {
             errors.push(`Failed to distribute to ${dist.characterId}: ${err.message}`);
         }

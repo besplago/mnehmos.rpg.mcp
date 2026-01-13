@@ -1223,10 +1223,34 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         const actor = currentState?.participants.find(p => p.id === parsed.actorId);
         const target = currentState?.participants.find(p => p.id === parsed.targetId);
 
-        // 1. Attack Bonus
+        // 1. Attack Bonus - auto-calculate from multiple sources
         if (attackBonus === undefined) {
+            // First: try preset on participant
             if (actor?.attackBonus !== undefined) {
                 attackBonus = actor.attackBonus;
+            }
+            // Second: calculate from participant ability scores
+            else if (actor?.abilityScores) {
+                const strMod = Math.floor((actor.abilityScores.strength - 10) / 2);
+                const dexMod = Math.floor((actor.abilityScores.dexterity - 10) / 2);
+                // Use higher of STR/DEX (simple heuristic for melee vs ranged)
+                const abilityMod = Math.max(strMod, dexMod);
+                // Default proficiency +2 (participant doesn't track level)
+                const proficiency = 2;
+                attackBonus = abilityMod + proficiency;
+            }
+            // Third: try to load from character DB
+            else {
+                const attackDb = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+                const charRepo = new CharacterRepository(attackDb);
+                const character = charRepo.findById(parsed.actorId);
+                if (character?.stats) {
+                    const strMod = Math.floor((character.stats.str - 10) / 2);
+                    const dexMod = Math.floor((character.stats.dex - 10) / 2);
+                    const abilityMod = Math.max(strMod, dexMod);
+                    const proficiency = Math.floor((character.level - 1) / 4) + 2;
+                    attackBonus = abilityMod + proficiency;
+                }
             }
         }
         if (attackBonus === undefined) {
@@ -1275,6 +1299,22 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             damage!,
             parsed.damageType  // HIGH-002: Pass damage type for resistance calculation
         );
+
+        // Sync HP to character database after attack
+        if (result.success && result.damage && result.damage > 0) {
+            const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+            const charRepo = new CharacterRepository(db);
+
+            // Get updated target HP from combat state and sync to character DB
+            const updatedState = engine.getState();
+            const targetParticipant = updatedState?.participants.find(p => p.id === parsed.targetId);
+            if (targetParticipant) {
+                const targetChar = charRepo.findById(parsed.targetId);
+                if (targetChar) {
+                    charRepo.update(parsed.targetId, { hp: targetParticipant.hp });
+                }
+            }
+        }
 
         // Check concentration if target took damage and is concentrating
         if (result.success && result.damage && result.damage > 0) {
@@ -1332,7 +1372,23 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
 
         result = engine.executeHeal(parsed.actorId, parsed.targetId, parsed.amount);
         output = formatHealResult(result);
-        
+
+        // Sync HP to character database after heal
+        if (result.success && result.healAmount && result.healAmount > 0) {
+            const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+            const charRepo = new CharacterRepository(db);
+
+            // Get updated target HP from combat state and sync to character DB
+            const updatedState = engine.getState();
+            const targetParticipant = updatedState?.participants.find(p => p.id === parsed.targetId);
+            if (targetParticipant) {
+                const targetChar = charRepo.findById(parsed.targetId);
+                if (targetChar) {
+                    charRepo.update(parsed.targetId, { hp: targetParticipant.hp });
+                }
+            }
+        }
+
         // Commit Action Economy
         engine.commitAction(parsed.actorId, 'action');
 
