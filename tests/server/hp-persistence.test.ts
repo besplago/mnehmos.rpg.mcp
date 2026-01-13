@@ -329,3 +329,197 @@ describe('CRIT-001: HP Persistence After Combat', () => {
         // This test passes if no exception was thrown
     });
 });
+
+/**
+ * PLAYTEST-FIX: HP Synchronization Between character_manage and combat_manage
+ *
+ * Player Experience:
+ * I used character_manage to update an NPC's HP during combat, but combat_manage get
+ * still shows the old HP value in the initiative display.
+ *
+ * Root Cause:
+ * Combat engine holds participants in memory. When character_manage updates the DB,
+ * the in-memory combat state isn't updated. We now sync FROM DB before display.
+ */
+describe('PLAYTEST-FIX: HP Sync from character_manage to combat display', () => {
+    beforeEach(() => {
+        closeDb();
+        getDb(':memory:');
+        clearCombatState();
+    });
+
+    afterEach(() => {
+        closeTestDb();
+    });
+
+    it('should reflect character_manage HP updates in combat_manage get', async () => {
+        // 1. Create a character
+        const charResult = await handleCreateCharacter({
+            name: 'Sync Test Hero',
+            stats: { str: 14, dex: 14, con: 14, int: 14, wis: 14, cha: 14 },
+            hp: 50,
+            maxHp: 50,
+            ac: 15,
+            level: 3,
+            provisionEquipment: false
+        }, mockCtx);
+        const character = extractEmbeddedJson(charResult.content[0].text, "CHARACTER");
+
+        // 2. Create encounter with this character
+        const encounterResult = await handleCreateEncounter({
+            seed: 'hp-sync-test',
+            participants: [
+                {
+                    id: character.id,
+                    name: character.name,
+                    initiativeBonus: 2,
+                    hp: 50,
+                    maxHp: 50,
+                    conditions: []
+                },
+                {
+                    id: 'enemy-test',
+                    name: 'Test Enemy',
+                    initiativeBonus: 0,
+                    hp: 20,
+                    maxHp: 20,
+                    isEnemy: true,
+                    conditions: []
+                }
+            ]
+        }, mockCtx);
+
+        const encounterText = encounterResult.content[0].text;
+        const encounterIdMatch = encounterText.match(/Encounter ID: (encounter-[^\n]+)/);
+        const encounterId = encounterIdMatch![1];
+
+        // 3. Verify initial HP in combat state
+        let stateResult = await handleGetEncounterState({ encounterId }, mockCtx);
+        let state = extractStateJson(stateResult.content[0].text);
+        let heroInCombat = state.participants.find((p: any) => p.id === character.id);
+        expect(heroInCombat.hp).toBe(50);
+
+        // 4. Update HP via character_manage (simulating external update)
+        const db = getDb(':memory:');
+        const { CharacterRepository } = await import('../../src/storage/repos/character.repo');
+        const charRepo = new CharacterRepository(db);
+        charRepo.update(character.id, { hp: 30 }); // Reduce to 30 HP
+
+        // 5. Get encounter state again - should reflect DB value
+        stateResult = await handleGetEncounterState({ encounterId }, mockCtx);
+        state = extractStateJson(stateResult.content[0].text);
+        heroInCombat = state.participants.find((p: any) => p.id === character.id);
+
+        // CRITICAL: HP should now show 30, not 50
+        expect(heroInCombat.hp).toBe(30);
+    });
+
+    it('should show DEFEATED status when HP set to 0 via character_manage', async () => {
+        // Create character and encounter
+        const charResult = await handleCreateCharacter({
+            name: 'Defeat Test',
+            stats: { str: 14, dex: 14, con: 14, int: 14, wis: 14, cha: 14 },
+            hp: 25,
+            maxHp: 25,
+            ac: 14,
+            level: 2,
+            provisionEquipment: false
+        }, mockCtx);
+        const character = extractEmbeddedJson(charResult.content[0].text, "CHARACTER");
+
+        const encounterResult = await handleCreateEncounter({
+            seed: 'defeat-sync-test',
+            participants: [
+                {
+                    id: character.id,
+                    name: character.name,
+                    initiativeBonus: 2,
+                    hp: 25,
+                    maxHp: 25,
+                    conditions: []
+                },
+                {
+                    id: 'enemy-2',
+                    name: 'Enemy',
+                    initiativeBonus: 0,
+                    hp: 20,
+                    maxHp: 20,
+                    isEnemy: true,
+                    conditions: []
+                }
+            ]
+        }, mockCtx);
+
+        const encounterText = encounterResult.content[0].text;
+        const encounterIdMatch = encounterText.match(/Encounter ID: (encounter-[^\n]+)/);
+        const encounterId = encounterIdMatch![1];
+
+        // Set HP to 0 via character repo (simulating character_manage update)
+        const db = getDb(':memory:');
+        const { CharacterRepository } = await import('../../src/storage/repos/character.repo');
+        const charRepo = new CharacterRepository(db);
+        charRepo.update(character.id, { hp: 0 });
+
+        // Get state - should show defeated
+        const stateResult = await handleGetEncounterState({ encounterId }, mockCtx);
+        const state = extractStateJson(stateResult.content[0].text);
+        const heroInCombat = state.participants.find((p: any) => p.id === character.id);
+
+        expect(heroInCombat.hp).toBe(0);
+        expect(heroInCombat.isDefeated).toBe(true);
+    });
+
+    it('should sync HP in advance_turn display', async () => {
+        // Create character and encounter
+        const charResult = await handleCreateCharacter({
+            name: 'Advance Sync',
+            stats: { str: 14, dex: 14, con: 14, int: 14, wis: 14, cha: 14 },
+            hp: 40,
+            maxHp: 40,
+            ac: 15,
+            level: 3,
+            provisionEquipment: false
+        }, mockCtx);
+        const character = extractEmbeddedJson(charResult.content[0].text, "CHARACTER");
+
+        const encounterResult = await handleCreateEncounter({
+            seed: 'advance-sync-test',
+            participants: [
+                {
+                    id: character.id,
+                    name: character.name,
+                    initiativeBonus: 5,
+                    hp: 40,
+                    maxHp: 40,
+                    conditions: []
+                },
+                {
+                    id: 'enemy-3',
+                    name: 'Enemy',
+                    initiativeBonus: 0,
+                    hp: 15,
+                    maxHp: 15,
+                    isEnemy: true,
+                    conditions: []
+                }
+            ]
+        }, mockCtx);
+
+        const encounterText = encounterResult.content[0].text;
+        const encounterIdMatch = encounterText.match(/Encounter ID: (encounter-[^\n]+)/);
+        const encounterId = encounterIdMatch![1];
+
+        // Update HP externally
+        const db = getDb(':memory:');
+        const { CharacterRepository } = await import('../../src/storage/repos/character.repo');
+        const charRepo = new CharacterRepository(db);
+        charRepo.update(character.id, { hp: 22 });
+
+        // Advance turn - the returned state should show synced HP
+        const advanceResult = await handleAdvanceTurn({ encounterId }, mockCtx);
+        const state = extractStateJson(advanceResult.content[0].text);
+        const heroInCombat = state.participants.find((p: any) => p.id === character.id);
+
+        expect(heroInCombat.hp).toBe(22);
+    });
+});

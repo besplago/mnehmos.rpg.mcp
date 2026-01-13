@@ -15,6 +15,7 @@ import { validateSpellCast, consumeSpellSlot } from '../engine/magic/spell-valid
 import { resolveSpell } from '../engine/magic/spell-resolver.js';
 import { CharacterRepository } from '../storage/repos/character.repo.js';
 import { ConcentrationRepository } from '../storage/repos/concentration.repo.js';
+import { CombatActionLogRepository } from '../storage/repos/combat-action-log.repo.js';
 import { startConcentration, checkConcentration, breakConcentration } from '../engine/magic/concentration.js';
 import type { Character } from '../schema/character.js';
 import { getPatternGenerator, PATTERN_DESCRIPTIONS } from './terrain-patterns.js';
@@ -25,6 +26,38 @@ let pubsub: PubSub | null = null;
 
 export function setCombatPubSub(instance: PubSub) {
     pubsub = instance;
+}
+
+// ============================================================
+// HP SYNCHRONIZATION - Sync combat participants with character DB
+// ============================================================
+
+/**
+ * Sync participant HP from character database.
+ * Called before displaying combat state to ensure HP reflects any
+ * changes made via character_manage during combat.
+ *
+ * This implements "database is source of truth" - if character_manage
+ * updated HP, we show that value in combat display.
+ */
+function syncParticipantHpFromDb(state: CombatState): CombatState {
+    const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+    const charRepo = new CharacterRepository(db);
+
+    for (const participant of state.participants) {
+        const character = charRepo.findById(participant.id);
+        if (character) {
+            // Sync HP if database value differs (character_manage was used)
+            if (character.hp !== participant.hp) {
+                participant.hp = character.hp;
+            }
+            if (character.maxHp !== participant.maxHp) {
+                participant.maxHp = character.maxHp;
+            }
+        }
+    }
+
+    return state;
 }
 
 // ============================================================
@@ -1162,6 +1195,10 @@ export async function handleGetEncounterState(args: unknown, ctx: SessionContext
         throw new Error('No active encounter');
     }
 
+    // PLAYTEST-FIX: Sync HP from character database before display
+    // This ensures character_manage updates are reflected in combat state
+    syncParticipantHpFromDb(state);
+
     // CRITICAL: Match create_encounter's format exactly
     // Frontend uses extractEmbeddedStateJson which looks for <!-- STATE_JSON ... STATE_JSON -->
     // Include sessionId in state JSON so frontend knows which session to query
@@ -1932,7 +1969,57 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
         const repo = new EncounterRepository(db);
         repo.saveState(parsed.encounterId, state);
-        
+
+        // PLAYTEST-FIX: Log action to combat history for context compaction resilience
+        if (result) {
+            const actionLogRepo = new CombatActionLogRepository(db);
+            const actor = state.participants.find(p => p.id === parsed.actorId);
+            const target = parsed.targetId ? state.participants.find(p => p.id === parsed.targetId) : undefined;
+
+            // Build HP changes record
+            const hpChanges: Record<string, { before: number; after: number }> = {};
+            if (result.target && result.target.hpBefore !== result.target.hpAfter) {
+                hpChanges[result.target.id] = {
+                    before: result.target.hpBefore,
+                    after: result.target.hpAfter
+                };
+            }
+
+            // Build concise summary for context reconstruction
+            let summary = '';
+            if (parsed.action === 'attack') {
+                if (result.success && result.damage) {
+                    summary = `${actor?.name || parsed.actorId} hit ${target?.name || parsed.targetId} for ${result.damage} damage`;
+                    if (result.defeated) summary += ' (DEFEATED)';
+                } else {
+                    summary = `${actor?.name || parsed.actorId} missed ${target?.name || parsed.targetId}`;
+                }
+            } else if (parsed.action === 'heal') {
+                summary = `${actor?.name || parsed.actorId} healed ${target?.name || parsed.targetId} for ${result.healAmount || 0} HP`;
+            } else if (parsed.action === 'cast_spell') {
+                summary = `${actor?.name || parsed.actorId} cast ${parsed.spellName || 'a spell'}`;
+                if (result.damage) summary += ` (${result.damage} damage)`;
+                if (result.healAmount) summary += ` (${result.healAmount} healing)`;
+            } else {
+                summary = `${actor?.name || parsed.actorId} performed ${parsed.action}`;
+            }
+
+            actionLogRepo.log({
+                encounterId: parsed.encounterId,
+                round: state.round,
+                turnIndex: state.currentTurnIndex,
+                actorId: parsed.actorId,
+                actorName: actor?.name || parsed.actorId,
+                actionType: parsed.action,
+                targetIds: parsed.targetId ? [parsed.targetId] : undefined,
+                resultSummary: summary,
+                resultDetail: result.detailedBreakdown,
+                damageDealt: result.damage,
+                healingDone: result.healAmount,
+                hpChanges: Object.keys(hpChanges).length > 0 ? hpChanges : undefined
+            });
+        }
+
         // Append current state JSON for frontend
         const stateJson = buildStateJson(state, parsed.encounterId);
         output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
@@ -1978,6 +2065,11 @@ export async function handleAdvanceTurn(args: unknown, ctx: SessionContext) {
         repo.saveState(parsed.encounterId, state);
     }
 
+    // PLAYTEST-FIX: Sync HP from character database before display
+    if (state) {
+        syncParticipantHpFromDb(state);
+    }
+
     let output = `\n⏭️ TURN ENDED: ${previousParticipant?.name}\n`;
     output += state ? formatCombatStateText(state) : 'No combat state';
     
@@ -2010,7 +2102,11 @@ export async function handleEndEncounter(args: unknown, ctx: SessionContext) {
 
     const finalState = engine.getState();
 
-    // CRIT-001 FIX: Sync HP changes back to character records
+    // PLAYTEST-FIX: Report final HP from database (source of truth)
+    // We NO LONGER sync participant.hp → DB because:
+    // 1. combat_action already syncs HP to DB after each action
+    // 2. character_manage updates go directly to DB
+    // 3. Database is the source of truth, not in-memory combat state
     const syncResults: { id: string; name: string; hp: number; synced: boolean }[] = [];
 
     if (finalState) {
@@ -2019,20 +2115,19 @@ export async function handleEndEncounter(args: unknown, ctx: SessionContext) {
         const charRepo = new CharacterRepository(db);
 
         for (const participant of finalState.participants) {
-            // Try to find this participant in the character database
+            // Report HP from database (the source of truth)
             const character = charRepo.findById(participant.id);
 
             if (character) {
-                // Sync HP back to character record
-                charRepo.update(participant.id, { hp: participant.hp });
+                // Report the DB HP value (no write needed - DB is already correct)
                 syncResults.push({
                     id: participant.id,
                     name: participant.name,
-                    hp: participant.hp,
+                    hp: character.hp, // Use DB value, not stale participant.hp
                     synced: true
                 });
             } else {
-                // Ad-hoc participant (not in DB) - skip silently
+                // Ad-hoc participant (not in DB) - report combat state HP
                 syncResults.push({
                     id: participant.id,
                     name: participant.name,

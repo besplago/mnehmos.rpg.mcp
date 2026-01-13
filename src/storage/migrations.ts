@@ -108,6 +108,26 @@ export function migrate(db: Database.Database) {
     FOREIGN KEY(encounter_id) REFERENCES encounters(id) ON DELETE CASCADE
   );
 
+    -- PLAYTEST-FIX: Combat action history for context compaction resilience
+    CREATE TABLE IF NOT EXISTS combat_action_log(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    encounter_id TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    turn_index INTEGER NOT NULL,
+    actor_id TEXT NOT NULL,
+    actor_name TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    target_ids TEXT, --JSON array of target IDs
+    result_summary TEXT NOT NULL,
+    result_detail TEXT, --Full breakdown for display
+    damage_dealt INTEGER,
+    healing_done INTEGER,
+    hp_changes TEXT, --JSON: {targetId: {before, after}}
+    timestamp TEXT NOT NULL
+  );
+    CREATE INDEX IF NOT EXISTS idx_combat_action_log_encounter ON combat_action_log(encounter_id);
+    CREATE INDEX IF NOT EXISTS idx_combat_action_log_round ON combat_action_log(encounter_id, round);
+
     CREATE TABLE IF NOT EXISTS audit_logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     action TEXT NOT NULL,

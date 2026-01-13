@@ -154,6 +154,18 @@ async function handleAdd(args: z.infer<typeof AddSchema>): Promise<object> {
     const id = uuidv4();
     const now = new Date().toISOString();
 
+    // PLAYTEST-FIX: Validate world exists before insert to give helpful error
+    const worldCheck = db.prepare('SELECT id, name FROM worlds WHERE id = ?').get(args.worldId) as { id: string; name: string } | undefined;
+    if (!worldCheck) {
+        return {
+            error: true,
+            code: 'WORLD_NOT_FOUND',
+            message: `World "${args.worldId}" not found. Create it first with world_manage.`,
+            suggestion: `Call: world_manage action: 'create' with id: '${args.worldId}'`,
+            providedWorldId: args.worldId
+        };
+    }
+
     // Validate metadata against type-specific schema
     let validatedMetadata = args.metadata;
     try {

@@ -20,12 +20,14 @@ import {
     handleExecuteLairAction
 } from '../combat-tools.js';
 import { expandCreatureTemplate, listAllTemplates } from '../../data/creature-presets.js';
+import { getDb } from '../../storage/index.js';
+import { CombatActionLogRepository } from '../../storage/repos/combat-action-log.repo.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ACTIONS = ['create', 'get', 'end', 'load', 'advance', 'death_save', 'lair_action', 'spawn_quick_enemy'] as const;
+const ACTIONS = ['create', 'get', 'end', 'load', 'advance', 'death_save', 'lair_action', 'spawn_quick_enemy', 'get_history'] as const;
 type CombatManageAction = typeof ACTIONS[number];
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -110,6 +112,13 @@ const SpawnQuickEnemySchema = z.object({
     position: z.object({ x: z.number(), y: z.number() }).optional().describe('Starting position (defaults to random)'),
     encounterId: z.string().optional().describe('Add to existing encounter (creates new if omitted)'),
     seed: z.string().optional().describe('Seed for deterministic combat (auto-generated if omitted)')
+});
+
+const GetHistorySchema = z.object({
+    action: z.literal('get_history'),
+    encounterId: z.string().describe('The ID of the encounter'),
+    round: z.number().int().optional().describe('Get actions from a specific round (omit for all)'),
+    limit: z.number().int().min(1).max(100).default(20).describe('Max actions to return (default 20)')
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -285,6 +294,54 @@ const definitions: Record<CombatManageAction, ActionDefinition> = {
             };
         },
         aliases: ['quick', 'spawn', 'summon', 'add_enemy']
+    },
+
+    get_history: {
+        schema: GetHistorySchema,
+        handler: async (params: z.infer<typeof GetHistorySchema>) => {
+            const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+            const actionLogRepo = new CombatActionLogRepository(db);
+
+            let actions;
+            if (params.round !== undefined) {
+                actions = actionLogRepo.getByRound(params.encounterId, params.round);
+            } else {
+                actions = actionLogRepo.getRecent(params.encounterId, params.limit);
+            }
+
+            if (actions.length === 0) {
+                return {
+                    success: true,
+                    actionType: 'get_history',
+                    encounterId: params.encounterId,
+                    actions: [],
+                    summary: 'No combat actions recorded for this encounter.',
+                    hint: 'Actions are logged automatically when using combat_action.'
+                };
+            }
+
+            // Build summary for context reconstruction
+            const summary = actionLogRepo.getSummary(params.encounterId);
+
+            return {
+                success: true,
+                actionType: 'get_history',
+                encounterId: params.encounterId,
+                totalActions: actions.length,
+                actions: actions.map(a => ({
+                    round: a.round,
+                    actor: a.actorName,
+                    action: a.actionType,
+                    summary: a.resultSummary,
+                    damage: a.damageDealt,
+                    healing: a.healingDone,
+                    timestamp: a.timestamp
+                })),
+                summary,
+                hint: 'Use this to reconstruct combat state after context compaction.'
+            };
+        },
+        aliases: ['history', 'log', 'replay', 'actions']
     }
 };
 
