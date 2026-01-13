@@ -44,7 +44,7 @@ You talk to an AI (Claude, GPT, etc.) in natural language. You say things like "
 
 ---
 
-## v1.0 Release (January 2025)
+## v1.0 Release (January 2026)
 
 ### 85% Tool Reduction: 195 → 28 Consolidated Tools
 
