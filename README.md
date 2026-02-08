@@ -407,6 +407,8 @@ Contributions welcome! Please:
 - **[CLAUDE.md](CLAUDE.md)** - Development instructions
 - **[docs/WHITE_PAPER.md](docs/WHITE_PAPER.md)** - Design philosophy and architecture
 - **[docs/LLMSpatialGuide.md](docs/LLMSpatialGuide.md)** - LLM spatial navigation guide
+- **[docs/ADR-005-unified-ownership-architecture.md](docs/ADR-005-unified-ownership-architecture.md)** - Target ownership architecture
+- **[docs/EXECUTION-PRIORITIES-unified-ownership.md](docs/EXECUTION-PRIORITIES-unified-ownership.md)** - Outcome-based execution priorities
 
 ---
 
