@@ -27,7 +27,7 @@ import { getPatternGenerator } from '../terrain-patterns.js';
 type TerrainPatternName = 'river_valley' | 'canyon' | 'arena' | 'mountain_pass' | 'maze' | 'maze_rooms';
 
 // Simple ASCII map generator for spawned encounters
-function generateEncounterMap(encounterData: { state: any }, width: number, height: number): string {
+function generateEncounterMap(encounterData: { state: { tokens?: Array<{ position?: { x: number; y: number }; type?: string }>; participants?: Array<{ position?: { x: number; y: number }; name: string; isEnemy?: boolean }> } }, width: number, height: number): string {
     const state = encounterData.state;
     const grid: string[][] = [];
     
@@ -61,7 +61,7 @@ function generateEncounterMap(encounterData: { state: any }, width: number, heig
     return lines.join('\n');
 }
 import { parsePosition } from '../../utils/schema-shorthand.js';
-import { ENCOUNTER_PRESETS, getEncountersByTag, getEncountersForLevel, scaleEncounter } from '../../data/encounter-presets.js';
+import { ENCOUNTER_PRESETS, EncounterPreset, getEncountersByTag, getEncountersForLevel, scaleEncounter } from '../../data/encounter-presets.js';
 import { Character } from '../../schema/character.js';
 
 // Helper function to build a complete Character object
@@ -409,7 +409,7 @@ async function handleSpawnEncounter(input: SpawnManageInput, ctx: SessionContext
     const now = new Date().toISOString();
 
     // Get encounter preset
-    let encounterData: any;
+    let encounterData: EncounterPreset | undefined;
     if (input.preset) {
         encounterData = ENCOUNTER_PRESETS[input.preset];
         if (!encounterData) {
@@ -422,7 +422,7 @@ async function handleSpawnEncounter(input: SpawnManageInput, ctx: SessionContext
             };
         }
     } else if (input.random) {
-        let candidates: any[] = [];
+        let candidates: EncounterPreset[] = [];
         if (input.tags && input.tags.length > 0) {
             // Get encounters matching any of the tags
             for (const tag of input.tags) {
@@ -437,7 +437,7 @@ async function handleSpawnEncounter(input: SpawnManageInput, ctx: SessionContext
             candidates = getEncountersForLevel(input.level);
             // Filter by difficulty if specified
             if (input.difficulty && candidates.length > 0) {
-                const filtered = candidates.filter((e: any) => e.difficulty === input.difficulty);
+                const filtered = candidates.filter(e => e.difficulty === input.difficulty);
                 if (filtered.length > 0) candidates = filtered;
             }
         } else {
@@ -565,7 +565,7 @@ async function handleSpawnEncounter(input: SpawnManageInput, ctx: SessionContext
     // Save to database
     encounterRepo.create({
         id: encounterId,
-        tokens: encounterState.participants.map((p: any) => ({
+        tokens: encounterState.participants.map((p: CombatParticipant) => ({
             id: p.id,
             name: p.name,
             initiativeBonus: p.initiativeBonus,
@@ -581,7 +581,7 @@ async function handleSpawnEncounter(input: SpawnManageInput, ctx: SessionContext
         round: encounterState.round,
         activeTokenId: encounterState.turnOrder[encounterState.currentTurnIndex],
         status: 'active',
-        terrain: encounterData.terrain || { obstacles: [] },
+        terrain: encounterData.terrain ? { ...encounterData.terrain, obstacles: encounterData.terrain.obstacles || [] } : { obstacles: [] },
         props: [],
         gridBounds: { minX: 0, maxX: 20, minY: 0, maxY: 20 },
         createdAt: now,
@@ -604,10 +604,10 @@ async function handleSpawnEncounter(input: SpawnManageInput, ctx: SessionContext
     output += '```\n' + asciiMap + '\n```\n';
 
     output += RichFormatter.section('Turn Order');
-    const turnRows = encounterState.participants.map((p: any, i: number) => [
+    const turnRows = encounterState.participants.map((p: CombatParticipant, i: number) => [
         i === encounterState.currentTurnIndex ? '►' : '',
         p.name,
-        p.initiative.toString(),
+        (p.initiative ?? 0).toString(),
         `${p.hp}/${p.maxHp}`,
         p.isEnemy ? 'Enemy' : 'Ally'
     ]);
@@ -620,7 +620,7 @@ async function handleSpawnEncounter(input: SpawnManageInput, ctx: SessionContext
         preset: input.preset,
         difficulty: encounterData.difficulty,
         round: encounterState.round,
-        participants: encounterState.participants.map((p: any) => ({
+        participants: encounterState.participants.map((p: CombatParticipant) => ({
             id: p.id,
             name: p.name,
             hp: p.hp,
@@ -899,7 +899,7 @@ async function handleSpawnTactical(input: SpawnManageInput, ctx: SessionContext)
     // Save to database
     encounterRepo.create({
         id: encounterId,
-        tokens: encounterState.participants.map((p: any) => ({
+        tokens: encounterState.participants.map((p: CombatParticipant) => ({
             id: p.id,
             name: p.name,
             initiativeBonus: p.initiativeBonus,
@@ -941,7 +941,7 @@ async function handleSpawnTactical(input: SpawnManageInput, ctx: SessionContext)
         encounterId,
         gridSize: { width, height },
         round: encounterState.round,
-        participants: encounterState.participants.map((p: any) => ({
+        participants: encounterState.participants.map((p: CombatParticipant) => ({
             id: p.id,
             name: p.name,
             hp: p.hp,
