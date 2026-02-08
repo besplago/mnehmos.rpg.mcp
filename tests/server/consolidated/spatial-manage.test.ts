@@ -3,7 +3,6 @@
  * Validates all 5 actions: look, generate, get_exits, move, list
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleSpatialManage, SpatialManageTool } from '../../../src/server/consolidated/spatial-manage.js';
 import { getDb } from '../../../src/storage/index.js';
 import { SpatialRepository } from '../../../src/storage/repos/spatial.repo.js';

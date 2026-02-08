@@ -3,7 +3,6 @@
  * Validates all 5 actions: init, get_status, submit_actions, mark_ready, poll_results
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleTurnManage, TurnManageTool } from '../../../src/server/consolidated/turn-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { WorldRepository } from '../../../src/storage/repos/world.repo.js';

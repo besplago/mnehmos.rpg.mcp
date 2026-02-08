@@ -4,7 +4,6 @@
  * get_history, get_recent, get_context, interact
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleNpcManage, NpcManageTool } from '../../../src/server/consolidated/npc-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

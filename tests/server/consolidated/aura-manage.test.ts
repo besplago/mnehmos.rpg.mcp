@@ -3,7 +3,6 @@
  * Validates all 7 actions: create, list, get_affecting, process, remove, remove_by_owner, expire
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleAuraManage, AuraManageTool } from '../../../src/server/consolidated/aura-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

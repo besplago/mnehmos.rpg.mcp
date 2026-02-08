@@ -5,7 +5,6 @@
  * cleanup, loot_table_create, loot_table_get, loot_table_list
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleCorpseManage, CorpseManageTool } from '../../../src/server/consolidated/corpse-manage.js';
 import { handleItemManage } from '../../../src/server/consolidated/item-manage.js';
 import { getDb } from '../../../src/storage/index.js';

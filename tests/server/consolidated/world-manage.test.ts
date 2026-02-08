@@ -3,7 +3,6 @@
  * Validates all 7 actions: create, get, list, delete, update, generate, get_state
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleWorldManage, WorldManageTool } from '../../../src/server/consolidated/world-manage.js';
 import { getDb } from '../../../src/storage/index.js';
 import { randomUUID } from 'crypto';

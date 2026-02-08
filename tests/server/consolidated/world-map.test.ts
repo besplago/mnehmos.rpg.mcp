@@ -3,7 +3,6 @@
  * Validates all 7 actions: overview, region, tiles, patch, preview, find_poi, suggest_poi
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleWorldMap, WorldMapTool } from '../../../src/server/consolidated/world-map.js';
 import { handleWorldManage } from '../../../src/server/consolidated/world-manage.js';
 import { getDb } from '../../../src/storage/index.js';

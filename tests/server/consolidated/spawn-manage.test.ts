@@ -3,7 +3,6 @@
  * Validates all 5 actions: spawn_character, spawn_location, spawn_encounter, spawn_preset_location, spawn_tactical
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleSpawnManage, SpawnManageTool } from '../../../src/server/consolidated/spawn-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { WorldRepository } from '../../../src/storage/repos/world.repo.js';

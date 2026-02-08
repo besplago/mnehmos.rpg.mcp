@@ -3,7 +3,6 @@
  * Validates all 7 actions: create, get, end, load, advance, death_save, lair_action
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleCombatManage, CombatManageTool } from '../../../src/server/consolidated/combat-manage.js';
 import { clearCombatState } from '../../../src/server/handlers/combat-handlers.js';
 import { getDb } from '../../../src/storage/index.js';

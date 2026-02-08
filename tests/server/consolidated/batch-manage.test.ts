@@ -3,7 +3,6 @@
  * Validates all 6 actions: create_characters, create_npcs, distribute_items, execute_workflow, list_templates, get_template
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleBatchManage, BatchManageTool } from '../../../src/server/consolidated/batch-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

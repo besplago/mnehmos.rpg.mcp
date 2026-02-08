@@ -3,7 +3,6 @@
  * Validates all 2 actions: initialize, get_context
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleSessionManage, SessionManageTool } from '../../../src/server/consolidated/session-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { WorldRepository } from '../../../src/storage/repos/world.repo.js';

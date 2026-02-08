@@ -3,7 +3,6 @@
  * Validates all 3 actions: travel, loot, rest
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleTravelManage, TravelManageTool } from '../../../src/server/consolidated/travel-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { PartyRepository } from '../../../src/storage/repos/party.repo.js';

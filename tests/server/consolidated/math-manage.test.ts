@@ -3,7 +3,6 @@
  * Validates all 5 actions: roll, probability, solve, simplify, projectile
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleMathManage, MathManageTool } from '../../../src/server/consolidated/math-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 

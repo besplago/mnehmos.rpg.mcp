@@ -3,7 +3,6 @@
  * Validates all 8 actions: give, remove, transfer, use, equip, unequip, get, get_detailed
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleInventoryManage, InventoryManageTool } from '../../../src/server/consolidated/inventory-manage.js';
 import { handleItemManage } from '../../../src/server/consolidated/item-manage.js';
 import { getDb } from '../../../src/storage/index.js';

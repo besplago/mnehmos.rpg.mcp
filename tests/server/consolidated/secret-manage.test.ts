@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleSecretManage, SecretManageTool } from '../../../src/server/consolidated/secret-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { WorldRepository } from '../../../src/storage/repos/world.repo.js';

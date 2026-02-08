@@ -3,7 +3,6 @@
  * Validates all 7 actions: render, aoe, update_terrain, place_prop, measure, generate_patch, generate_pattern
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleCombatMap, CombatMapTool } from '../../../src/server/consolidated/combat-map.js';
 import { handleCombatManage } from '../../../src/server/consolidated/combat-manage.js';
 import { clearCombatState } from '../../../src/server/handlers/combat-handlers.js';

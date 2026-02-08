@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleCharacterManage, CharacterManageTool } from '../../../src/server/consolidated/character-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

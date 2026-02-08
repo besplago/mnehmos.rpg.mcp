@@ -3,7 +3,6 @@
  * Validates all 6 actions: create, get, list, search, update, delete
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleItemManage, ItemManageTool } from '../../../src/server/consolidated/item-manage.js';
 import { getDb } from '../../../src/storage/index.js';
 

@@ -6,7 +6,6 @@
  * get_context, get_unassigned, move, get_position, get_in_region
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handlePartyManage, PartyManageTool } from '../../../src/server/consolidated/party-manage.js';
 import { closeDb, getDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

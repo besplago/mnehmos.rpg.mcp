@@ -4,7 +4,6 @@
  * process_triggers, advance_durations, synthesize, get_spellbook
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleImprovisationManage, ImprovisationManageTool } from '../../../src/server/consolidated/improvisation-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

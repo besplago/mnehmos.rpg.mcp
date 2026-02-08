@@ -3,7 +3,6 @@
  * Validates all 9 actions: attack, heal, move, disengage, cast_spell, dash, dodge, help, ready
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleCombatAction, CombatActionTool } from '../../../src/server/consolidated/combat-action.js';
 import { handleCombatManage } from '../../../src/server/consolidated/combat-manage.js';
 import { clearCombatState } from '../../../src/server/handlers/combat-handlers.js';

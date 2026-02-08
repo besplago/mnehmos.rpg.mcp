@@ -3,7 +3,6 @@
  * Validates all 8 actions: create, get, list, assign, update_objective, complete_objective, complete, get_log
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleQuestManage, QuestManageTool } from '../../../src/server/consolidated/quest-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

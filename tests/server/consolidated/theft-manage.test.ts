@@ -3,7 +3,6 @@
  * Validates all 10 actions: steal, check, search, recognize, sell, register_fence, report, decay, get_fence, list_fences
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleTheftManage, TheftManageTool } from '../../../src/server/consolidated/theft-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

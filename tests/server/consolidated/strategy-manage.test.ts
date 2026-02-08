@@ -3,7 +3,6 @@
  * Validates all 6 actions: create_nation, get_state, propose_alliance, claim_region, resolve_turn, list_nations
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleStrategyManage, StrategyManageTool } from '../../../src/server/consolidated/strategy-manage.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { WorldRepository } from '../../../src/storage/repos/world.repo.js';
