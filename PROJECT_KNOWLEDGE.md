@@ -5,10 +5,12 @@
 | Property | Value |
 |----------|-------|
 | **Repository** | https://github.com/Mnehmos/mnehmos.rpg.mcp |
-| **Primary Language** | TypeScript |
+| **Primary Language** | TypeScript (strict mode, ESM) |
 | **Project Type** | MCP Server |
-| **Status** | Active |
-| **Last Updated** | 2025-12-29 |
+| **Status** | Active (Alpha) |
+| **Tool Count** | 32 (28 consolidated + 4 meta/event) |
+| **Tests** | 1889 passing, 6 skipped |
+| **Last Updated** | 2026-02-07 |
 
 ## Overview
 
@@ -18,344 +20,171 @@ mnehmos.rpg.mcp is a rules-enforced RPG backend MCP server that transforms any L
 
 ### System Design
 
-The project implements an Event-Driven Agentic AI Architecture based on the OODA loop pattern (Observe-Orient-Decide-Act). LLMs act as the "brain" proposing intentions, while the engine serves as the "nervous system" validating constraints and executing actions. The system uses the Model Context Protocol (MCP) to expose 145+ tools that LLMs can call to interact with the game world. All world state is persisted in SQLite with WAL mode, supporting multi-tenant projects, parallel worlds, and deterministic replay. The server can run via stdio, TCP, Unix sockets, or WebSockets for integration with various MCP clients.
+The project implements an Event-Driven Agentic AI Architecture based on the OODA loop pattern (Observe-Orient-Decide-Act). LLMs act as the "brain" proposing intentions, while the engine serves as the "nervous system" validating constraints and executing actions. The system uses the Model Context Protocol (MCP) to expose 32 tools that LLMs can call to interact with the game world. All world state is persisted in SQLite with WAL mode, supporting multi-tenant projects, parallel worlds, and deterministic replay. The server can run via stdio, TCP, Unix sockets, or WebSockets for integration with various MCP clients.
 
 The architecture enforces a key invariant: LLMs never directly mutate world state. All changes flow through validated tool calls, creating an anti-hallucination design where the AI cannot invent game outcomes.
+
+### Consolidated Tool Pattern
+
+The server uses an **action-routed consolidated tool** architecture. Instead of exposing 145+ individual tools (one per operation), all operations are grouped into 28 domain tools that accept an `action` parameter with fuzzy matching:
+
+```typescript
+// Old: 7 separate tools
+create_character, get_character, update_character, delete_character, ...
+
+// New: 1 consolidated tool with action routing
+character_manage({ action: "create", name: "Thorgrim", ... })
+character_manage({ action: "get", characterId: "abc-123" })
+character_manage({ action: "update", characterId: "abc-123", hp: 15 })
+```
+
+Each consolidated tool:
+- Uses `action-router.ts` for fuzzy enum matching (typos like "atack" → "attack")
+- Returns guiding error messages listing valid actions on mismatch
+- Wraps responses with `RichFormatter` embedding structured JSON in HTML comments
+- Accepts a `SessionContext` for multi-session support
 
 ### Key Components
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
-| MCP Server Entry | Server initialization, transport setup, tool registration | `src/server/index.ts` |
-| Tool Registry | Aggregates 145+ tools with metadata for dynamic loading | `src/server/tool-registry.ts` |
+| MCP Server Entry | Server init, transport setup, tool registration | `src/server/index.ts` |
+| Consolidated Registry | Registers all 28 consolidated tools | `src/server/consolidated-registry.ts` |
+| Consolidated Tools | Action-routed tool handlers (28 tools) | `src/server/consolidated/` |
+| Combat Handlers | Combat engine handler implementations | `src/server/handlers/combat-handlers.ts` |
+| Spatial Handlers | Spatial/room handler implementations | `src/server/handlers/spatial-handlers.ts` |
+| Meta Tools | Tool discovery (search_tools, load_tool_schema) | `src/server/meta-tools.ts` |
+| Event System | PubSub + MCP notification streaming | `src/server/events.ts` |
 | Combat Engine | Initiative, damage calculation, death saves, spatial combat | `src/engine/combat/` |
 | Magic System | Spell validation, slot tracking, concentration, scrolls | `src/engine/magic/` |
 | Spatial Engine | Grid movement, collision detection, pathfinding | `src/engine/spatial/` |
 | World Generator | Procedural generation with Perlin noise, 28+ biomes | `src/engine/worldgen/` |
-| Storage Layer | SQLite repositories with migration system | `src/storage/` |
-| Schema Definitions | Zod validation schemas for all data structures | `src/schema/` |
+| Storage Layer | SQLite repositories (27 repos) with migration system | `src/storage/` |
+| Schema Definitions | Zod validation schemas (29 schemas) for all data structures | `src/schema/` |
 | Preset Data | 1100+ creature presets, 50+ encounter presets, 30+ locations | `src/data/` |
-| Tool Handlers | 35+ tool modules organized by domain (combat, inventory, etc.) | `src/server/*-tools.ts` |
 | Math Utilities | Dice rolling, algebra solver, physics calculations | `src/math/` |
+| Action Router | Fuzzy enum matching with guiding errors | `src/utils/action-router.ts` |
+| Tool Metadata | Consolidated tool descriptions and category tags | `src/server/tool-metadata.ts` |
 
 ### Data Flow
 
 ```
 Player Intent (Natural Language)
-    ↓
-LLM Interpretation → MCP Tool Call
-    ↓
-Tool Handler → Schema Validation (Zod)
-    ↓
-Engine Logic → Constraint Checking
-    ↓
-Database Update (SQLite) → Event Emission (PubSub)
-    ↓
-Response + World State → LLM Narration → Player
+    |
+LLM Interpretation -> MCP Tool Call (action-routed)
+    |
+Consolidated Tool -> Action Router -> Schema Validation (Zod)
+    |
+Handler Function -> Engine Logic -> Constraint Checking
+    |
+Database Update (SQLite) -> Event Emission (PubSub)
+    |
+RichFormatter Response -> LLM Narration -> Player
 ```
 
 For combat specifically:
 ```
 Player: "I attack the goblin"
-    ↓
-LLM → execute_combat_action({ action: "attack", targetId: "goblin-1" })
-    ↓
+    |
+LLM -> combat_action({ action: "attack", targetId: "goblin-1" })
+    |
+Action Router: Match "attack" -> handleExecuteCombatAction()
+    |
 Combat Engine: Roll initiative, check AC, calculate damage
-    ↓
-Update HP in database → Emit combat_state_changed event
-    ↓
-Return combat result (hit/miss, damage rolled, new HP)
-    ↓
+    |
+Update HP in database -> Emit combat_state_changed event
+    |
+Return combat result with embedded JSON (hit/miss, damage, new HP)
+    |
 LLM narrates outcome based on mechanical result
 ```
 
 ## API Surface
 
-### Public Interfaces
+### Tool Architecture
 
-The server exposes 145+ MCP tools organized into categories. All tools accept a sessionId parameter for multi-session support.
+All 32 tools are registered via MCP protocol. The 28 consolidated tools use action routing; 4 are standalone meta/event tools. All consolidated tools accept a `sessionId` parameter for multi-session support.
 
-#### Meta-Tools (Discovery)
+### Meta & Event Tools (4 standalone)
 
-##### Tool: `search_tools`
-- **Purpose**: Search for tools by keyword, category, or capability
-- **Parameters**:
-  - `query` (string): Search keywords (e.g., "combat", "spell", "inventory")
-  - `category` (string, optional): Filter by category (world, combat, character, inventory, magic, quest, math, strategy, social, meta)
-- **Returns**: Array of tool names with descriptions and metadata
+| Tool | Purpose |
+|------|---------|
+| `search_tools` | Search tools by keyword or category |
+| `load_tool_schema` | Load full Zod schema for a tool on-demand |
+| `subscribe_to_events` | Subscribe to PubSub event topics (combat, quest, etc.) |
+| `unsubscribe_from_events` | Unsubscribe from event topics |
 
-##### Tool: `load_tool_schema`
-- **Purpose**: Load the full Zod schema for a specific tool on-demand
-- **Parameters**:
-  - `toolName` (string): Name of the tool to load schema for
-- **Returns**: Complete tool schema with all parameter definitions
+### Consolidated Tools (28 action-routed)
 
-#### World Management (12 tools)
+Each tool accepts `{ action: string, ...params }`. The `action` parameter is fuzzy-matched.
 
-##### Tool: `generate_world`
-- **Purpose**: Procedurally generate a complete world with terrain, biomes, rivers
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): Unique world identifier
-  - `width` (number): World width in tiles
-  - `height` (number): World height in tiles
-  - `seed` (string, optional): Random seed for reproducible generation
-  - `biomeConfig` (object, optional): Custom biome distribution settings
-- **Returns**: Generated world with tiles, regions, rivers, and biome statistics
+#### Character & Party
 
-##### Tool: `get_world_state`
-- **Purpose**: Retrieve complete world state including environment and time
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-- **Returns**: Full world state with tiles, structures, characters, time, weather
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `character_manage` | create, get, update, delete, list, level_up | Character CRUD + progression |
+| `party_manage` | create, add_member, remove_member, get, list, disband | Party management |
+| `rest_manage` | short, long | Short/long rest mechanics (HP, spell slots, abilities) |
 
-##### Tool: `apply_map_patch`
-- **Purpose**: Modify terrain using DSL commands (set_tile, add_structure, etc.)
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-  - `patch` (string): DSL patch commands
-- **Returns**: Applied changes and updated map state
+#### Combat
 
-#### Combat System (7 tools)
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `combat_manage` | create, get, end, load, advance_turn, death_save, lair_action | Encounter lifecycle |
+| `combat_action` | attack, cast_spell, move, dodge, disengage, hide, dash, help, ready, shove, grapple, use_item, improvise | In-combat action resolution |
+| `combat_map` | render, aoe, terrain, prop, measure, generate_patch, generate_pattern | Tactical map operations |
 
-##### Tool: `create_encounter`
-- **Purpose**: Initialize combat encounter with participants and initiative
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-  - `participants` (array): Array of character IDs to include in combat
-  - `terrain` (object, optional): Spatial terrain configuration
-- **Returns**: Encounter ID, initiative order, starting combat state
+#### Magic & Effects
 
-##### Tool: `execute_combat_action`
-- **Purpose**: Execute combat actions (attack, cast_spell, move, dodge, etc.)
-- **Parameters**:
-  - `encounterId` (string): Active encounter identifier
-  - `action` (string): Action type (attack, cast_spell, move, dodge, disengage, hide)
-  - `actorId` (string): Character performing action
-  - `targetId` (string, optional): Target character for attack/spell
-  - `spellName` (string, optional): Spell name if action is cast_spell
-  - `position` (object, optional): Target position for movement
-- **Returns**: Action result with rolls, damage, status changes, narrative description
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `concentration_manage` | check, get, break, list | Concentration tracking |
+| `scroll_manage` | use, create, identify, list | Spell scroll mechanics |
+| `aura_manage` | create, get, list, remove, tick, apply, check | Persistent aura effects |
 
-##### Tool: `roll_death_save`
-- **Purpose**: Roll death saving throw for unconscious character (D&D 5e rules)
-- **Parameters**:
-  - `encounterId` (string): Encounter identifier
-  - `characterId` (string): Unconscious character ID
-  - `advantage` (boolean, optional): Roll with advantage
-  - `disadvantage` (boolean, optional): Roll with disadvantage
-- **Returns**: Death save result (success/failure/stabilize/death) with roll details
+#### Items & Economy
 
-#### Magic System (Integrated with combat + dedicated tools)
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `item_manage` | create, get, list, update, delete, search | Item template CRUD |
+| `inventory_manage` | give, remove, equip, unequip, transfer, list, use | Character inventory operations |
+| `corpse_manage` | create, loot, search, decay, get, list | Corpse/loot system |
+| `theft_manage` | steal, fence, investigate, heat, get, list | Theft economy with heat tracking |
 
-##### Tool: `take_long_rest`
-- **Purpose**: Restore all HP and spell slots after long rest
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-  - `characterId` (string): Character taking rest
-- **Returns**: Restored HP, spell slots, removed conditions
+#### World & Spatial
 
-##### Tool: `use_spell_scroll`
-- **Purpose**: Use a spell scroll from inventory
-- **Parameters**:
-  - `characterId` (string): Character using scroll
-  - `itemId` (string): Scroll item ID
-  - `targetId` (string, optional): Spell target
-- **Returns**: Spell resolution result, scroll consumed, ability check if needed
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `world_manage` | create, get, update, list, delete, set_time, set_weather | World state management |
+| `world_map` | generate, get, patch, query_tile, add_structure, list_structures | Procedural worldgen + terrain |
+| `spatial_manage` | look, generate_room, exits, move, list_rooms | Room-based dungeon navigation |
+| `travel_manage` | move, get_location, list_pois, enter_poi, rest_at_poi | Overworld travel system |
 
-##### Tool: `check_concentration_save`
-- **Purpose**: Roll concentration save when taking damage
-- **Parameters**:
-  - `characterId` (string): Concentrating character
-  - `damageAmount` (number): Damage taken
-  - `advantage` (boolean, optional): Roll with advantage
-- **Returns**: Save result (success/failure), concentration maintained or broken
+#### NPCs & Social
 
-#### Inventory & Items (15 tools)
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `npc_manage` | create, get, update, delete, list, add_memory, get_memories, relationship | NPC lifecycle + memory |
+| `quest_manage` | create, get, update, list, add_objective, update_objective, complete, fail, abandon | Quest tracking |
+| `narrative_manage` | add, get, list, search | Story/narrative log |
+| `secret_manage` | create, get, list, reveal, update | Hidden information management |
 
-##### Tool: `create_item_template`
-- **Purpose**: Define a new item type with properties
-- **Parameters**:
-  - `name` (string): Item name
-  - `type` (string): Item type (weapon, armor, consumable, quest_item, etc.)
-  - `value` (number): Gold piece value
-  - `weight` (number): Weight in pounds
-  - `properties` (object, optional): Item-specific properties (damage, AC, effects)
-- **Returns**: Created item template with generated ID
+#### Strategy & Nations
 
-##### Tool: `give_item`
-- **Purpose**: Add item to character inventory
-- **Parameters**:
-  - `characterId` (string): Character receiving item
-  - `itemTemplateId` (string): Item template to instantiate
-  - `quantity` (number, optional): Number of items (default 1)
-- **Returns**: Inventory updated with new item instance
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `strategy_manage` | create_nation, get_nation, list_nations, update_nation, diplomatic_action, get_diplomacy | Grand strategy layer |
+| `turn_manage` | process, get_state, advance_phase | Turn-based strategy processing |
 
-##### Tool: `equip_item`
-- **Purpose**: Equip item to character equipment slot
-- **Parameters**:
-  - `characterId` (string): Character equipping item
-  - `itemId` (string): Item instance ID
-  - `slot` (string): Equipment slot (mainHand, offHand, armor, etc.)
-- **Returns**: Item equipped, AC/damage recalculated
+#### Utility & Session
 
-#### Quest System (8 tools)
-
-##### Tool: `create_quest`
-- **Purpose**: Define quest with objectives and rewards
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-  - `name` (string): Quest name
-  - `description` (string): Quest description
-  - `objectives` (array): Array of objective definitions with completion criteria
-  - `rewards` (object, optional): XP, gold, items awarded on completion
-- **Returns**: Created quest with generated ID
-
-##### Tool: `update_objective`
-- **Purpose**: Increment objective progress (e.g., killed 3/5 goblins)
-- **Parameters**:
-  - `questId` (string): Quest identifier
-  - `objectiveId` (string): Objective identifier
-  - `progress` (number): New progress value
-- **Returns**: Updated objective status
-
-#### NPC Memory & Social System (7 tools)
-
-##### Tool: `update_npc_relationship`
-- **Purpose**: Create or update relationship between character and NPC
-- **Parameters**:
-  - `characterId` (string): Player character ID
-  - `npcId` (string): NPC character ID
-  - `familiarity` (number): Familiarity level (0-100)
-  - `disposition` (number): Disposition level (-100 to 100)
-- **Returns**: Updated relationship data
-
-##### Tool: `record_conversation_memory`
-- **Purpose**: Store conversation summary for NPC memory
-- **Parameters**:
-  - `characterId` (string): Player character ID
-  - `npcId` (string): NPC character ID
-  - `summary` (string): Conversation summary
-  - `importance` (number): Importance level (1-10)
-  - `topics` (array, optional): Topics discussed
-- **Returns**: Stored memory with timestamp
-
-##### Tool: `get_npc_context`
-- **Purpose**: Retrieve full NPC context for LLM injection
-- **Parameters**:
-  - `characterId` (string): Player character ID
-  - `npcId` (string): NPC character ID
-- **Returns**: Relationship status, conversation history, formatted for LLM prompting
-
-#### Theft & Economy (10 tools)
-
-##### Tool: `steal_item`
-- **Purpose**: Record theft of item with heat tracking
-- **Parameters**:
-  - `itemId` (string): Stolen item ID
-  - `originalOwnerId` (string): Original owner character ID
-  - `thiefId` (string): Thief character ID
-  - `witnessIds` (array, optional): Witness character IDs
-- **Returns**: Stolen item record with initial heat level
-
-##### Tool: `sell_to_fence`
-- **Purpose**: Sell stolen goods to fence NPC
-- **Parameters**:
-  - `itemId` (string): Stolen item to sell
-  - `fenceId` (string): Fence NPC ID
-- **Returns**: Sale price (reduced based on heat), heat transferred to fence
-
-#### Corpse & Loot System (14 tools)
-
-##### Tool: `create_corpse`
-- **Purpose**: Create lootable corpse from dead character
-- **Parameters**:
-  - `characterId` (string): Dead character ID
-  - `encounterId` (string, optional): Encounter where death occurred
-  - `position` (object, optional): Corpse position
-- **Returns**: Corpse entity with inventory transferred
-
-##### Tool: `loot_corpse`
-- **Purpose**: Transfer item from corpse to character
-- **Parameters**:
-  - `corpseId` (string): Corpse identifier
-  - `itemId` (string): Item to loot
-  - `targetCharacterId` (string): Character looting
-- **Returns**: Item transferred to looter's inventory
-
-#### Improvisation Engine (8 tools)
-
-##### Tool: `resolve_improvised_stunt`
-- **Purpose**: Resolve "Rule of Cool" stunts (e.g., "I kick the brazier into zombies")
-- **Parameters**:
-  - `characterId` (string): Character attempting stunt
-  - `description` (string): Stunt description
-  - `difficulty` (string): Difficulty (easy, medium, hard, extreme)
-  - `saveDC` (number, optional): DC for enemy saves
-  - `effects` (object): Damage, conditions, terrain changes
-- **Returns**: Ability check result, stunt outcome, effects applied
-
-##### Tool: `attempt_arcane_synthesis`
-- **Purpose**: Dynamically create new spells with wild surge risk
-- **Parameters**:
-  - `characterId` (string): Caster character ID
-  - `intent` (string): Desired spell effect
-  - `powerLevel` (number): Spell level equivalent (1-9)
-- **Returns**: Spell created or wild surge triggered
-
-#### Math & Dice (5 tools)
-
-##### Tool: `dice_roll`
-- **Purpose**: Roll dice with full D&D notation support
-- **Parameters**:
-  - `notation` (string): Dice notation (e.g., "2d6+3", "4d6dl1", "1d20 adv")
-- **Returns**: Roll result with breakdown of individual dice
-
-##### Tool: `physics_projectile`
-- **Purpose**: Calculate projectile trajectory for thrown weapons
-- **Parameters**:
-  - `initialVelocity` (number): Launch velocity
-  - `angle` (number): Launch angle in degrees
-  - `gravity` (number, optional): Gravity constant
-- **Returns**: Range, flight time, trajectory points
-
-#### Grand Strategy Mode (11 tools)
-
-##### Tool: `create_nation`
-- **Purpose**: Create nation with resources for strategy layer
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-  - `name` (string): Nation name
-  - `capital` (object): Capital region coordinates
-  - `resources` (object): Starting resources (gold, food, military)
-- **Returns**: Created nation with state
-
-#### Composite Tools (High-level workflows)
-
-##### Tool: `spawn_equipped_character`
-- **Purpose**: Create character with full equipment and inventory in one call
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-  - `preset` (string): Creature preset name (e.g., "knight", "wizard")
-  - `name` (string): Character name
-  - `equipment` (array, optional): Additional equipment
-- **Returns**: Character created with all items equipped
-
-##### Tool: `spawn_preset_encounter`
-- **Purpose**: Create balanced encounter from preset (e.g., "goblin_ambush")
-- **Parameters**:
-  - `projectId` (string): Project identifier
-  - `worldId` (string): World identifier
-  - `preset` (string): Encounter preset name
-  - `partyLevel` (number): Party level for scaling
-- **Returns**: Encounter created with all enemies spawned
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `math_manage` | roll, algebra, physics, probability, skill_check | Dice, math, skill checks |
+| `improvisation_manage` | stunt, synthesize_spell, custom_effect, wild_surge | Rule of Cool mechanics |
+| `spawn_manage` | character, encounter, equipped_character, preset_encounter | Quick entity creation |
+| `session_manage` | save, load, get_summary, list | Session state management |
+| `batch_manage` | create_characters, create_npcs, distribute_items, multi_step | Batch operations |
 
 ### Configuration
 
@@ -376,7 +205,8 @@ No environment variables required for basic operation. The server uses sensible 
 // (These are the MCP tool calls an LLM would make)
 
 // 1. Create a world
-const world = await generate_world({
+const world = await world_map({
+  action: "generate",
   projectId: "my-game",
   worldId: "world-1",
   width: 100,
@@ -385,91 +215,90 @@ const world = await generate_world({
 });
 
 // 2. Create a character using preset
-const character = await spawn_equipped_character({
+const character = await spawn_manage({
+  action: "equipped_character",
   projectId: "my-game",
   worldId: "world-1",
   preset: "fighter",
-  name: "Thorgrim Ironheart",
-  equipment: ["longsword", "shield", "healing_potion"]
+  name: "Thorgrim Ironheart"
 });
 
 // 3. Start combat encounter
-const encounter = await create_encounter({
+const encounter = await combat_manage({
+  action: "create",
   projectId: "my-game",
   worldId: "world-1",
-  participants: [character.id, "goblin-1", "goblin-2"]
+  participants: [
+    { id: "thorgrim", name: "Thorgrim", hp: 45, maxHp: 45, initiativeBonus: 2 },
+    { id: "goblin-1", name: "Goblin", hp: 7, maxHp: 7, initiativeBonus: 2 }
+  ]
 });
 
 // 4. Execute attack
-const attackResult = await execute_combat_action({
-  encounterId: encounter.id,
+const attackResult = await combat_action({
   action: "attack",
-  actorId: character.id,
+  actorId: "thorgrim",
   targetId: "goblin-1"
 });
-// Returns: { hit: true, damage: 8, targetHp: 2, rolls: "1d20+5=17, 1d8+3=8" }
+// Returns: hit/miss, damage rolled, new HP, embedded JSON with full state
 ```
 
 ### Advanced Patterns
 
 ```typescript
 // Example: Spellcasting with concentration tracking
-// This demonstrates the anti-hallucination design
 
-// 1. Character wants to cast a concentration spell
-const spellResult = await execute_combat_action({
-  encounterId: "enc-1",
+// 1. Cast a concentration spell
+const spellResult = await combat_action({
   action: "cast_spell",
   actorId: "wizard-1",
   spellName: "hold_person",
   targetId: "bandit-1"
 });
-// Engine validates: Does wizard know this spell?
-// Does wizard have a 2nd level slot available?
-// If yes: consume slot, start concentration tracking
+// Engine validates: spell known? slot available? already concentrating?
 
-// 2. Wizard takes damage - must save to maintain concentration
-const damageResult = await execute_combat_action({
-  encounterId: "enc-1",
-  action: "attack",
-  actorId: "bandit-2",
-  targetId: "wizard-1"
-});
-// Damage dealt: 12
-
-// 3. Engine automatically triggers concentration check
-const concentrationCheck = await check_concentration_save({
+// 2. Check concentration after taking damage
+const concCheck = await concentration_manage({
+  action: "check",
   characterId: "wizard-1",
   damageAmount: 12
 });
-// DC is max(10, damage/2) = 10
+// DC = max(10, damage/2) = 10
 // Returns: { success: false, concentration_broken: true }
-// hold_person spell ends automatically
+// hold_person ends automatically
 
-// The LLM cannot hallucinate spell slots or ignore concentration rules
-// The engine enforces all mechanics deterministically
+// 3. Fuzzy matching handles typos gracefully
+const typoResult = await combat_action({
+  action: "atack",  // typo!
+  actorId: "wizard-1",
+  targetId: "bandit-1"
+});
+// Action router matches "atack" -> "attack" via fuzzy matching
 ```
 
 ```typescript
-// Example: Using composite tools for efficient world building
+// Example: Batch operations for efficient world building
 
-// Spawn a populated tavern with NPCs
-const tavern = await spawn_preset_location({
+// Spawn multiple NPCs in one call
+const npcs = await batch_manage({
+  action: "create_npcs",
   projectId: "my-game",
   worldId: "world-1",
-  preset: "tavern",
-  position: { x: 50, y: 50 }
+  npcs: [
+    { name: "Barkeep", role: "merchant", location: "tavern" },
+    { name: "Guard Captain", role: "guard", location: "gate" },
+    { name: "Mysterious Stranger", role: "quest_giver", location: "corner" }
+  ]
 });
-// Returns: Location with 5 NPCs (barkeep, patrons), furniture, inventory
 
-// Create a balanced level-appropriate encounter
-const encounter = await spawn_preset_encounter({
+// Create a preset encounter scaled to party level
+const encounter = await spawn_manage({
+  action: "preset_encounter",
   projectId: "my-game",
   worldId: "world-1",
-  preset: "undead_crypt",
+  preset: "goblin_ambush",
   partyLevel: 5
 });
-// Returns: 3 zombies + 1 ghoul + lair terrain, auto-scaled to CR 5
 ```
 
 ## Dependencies
@@ -487,14 +316,13 @@ const encounter = await spawn_preset_encounter({
 | mathjs | ^15.1.0 | Algebra solver and mathematical operations |
 | nerdamer | ^1.1.13 | Symbolic algebra solver for physics calculations |
 | ws | ^8.16.0 | WebSocket transport support |
-| yaml | ^2.8.2 | YAML parsing for configuration files |
 
 ### Development Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
 | typescript | ^5.9.3 | TypeScript compiler with strict mode enabled |
-| vitest | ^1.6.1 | Test framework (800+ passing tests) |
+| vitest | ^1.6.1 | Test framework (1889 passing tests, 6 skipped) |
 | @types/node | ^24.10.1 | Node.js type definitions |
 | @types/better-sqlite3 | ^7.6.13 | SQLite type definitions |
 | @types/ws | ^8.5.10 | WebSocket type definitions |
@@ -539,7 +367,7 @@ npm install
 # Build TypeScript
 npm run build
 
-# Run tests (800+ tests should pass)
+# Run tests (1889 tests should pass)
 npm test
 ```
 
@@ -578,6 +406,8 @@ npm run test:ui
 npx vitest tests/engine/combat/engine.test.ts
 ```
 
+**Note:** Vitest is configured with `globals: true`. Do NOT add `import { describe, it, expect } from 'vitest'` to test files - this causes silent test collection failure on Windows with vitest 1.6.1.
+
 ### Building
 
 ```bash
@@ -587,7 +417,7 @@ npm run build
 
 # Build standalone binaries for all platforms
 npm run build:binaries
-# Output: bin/rpg-mcp-win.exe, bin/rpg-mcp-macos, bin/rpg-mcp-macos-arm64, bin/rpg-mcp-linux
+# Output: dist-bundle/rpg-mcp-win.exe, rpg-mcp-macos, rpg-mcp-macos-arm64, rpg-mcp-linux
 ```
 
 ### MCP Client Integration
@@ -624,26 +454,45 @@ Or using standalone binary:
 1. Binary builds for Windows may show false positive antivirus warnings due to pkg packaging (this is a known issue with standalone Node binaries)
 2. WebSocket transport does not yet support authentication - should only be used on localhost
 3. Large worlds (>200x200 tiles) may experience slower generation times due to Perlin noise calculations
-4. Concentration tracking relies on combat system integration and may not trigger correctly for out-of-combat damage sources
+4. Vitest 1.6.1 on Windows silently fails test collection when files have explicit vitest imports with `globals: true`
+
+### Active TODOs
+
+| Location | Severity | Description |
+|----------|----------|-------------|
+| `src/engine/magic/spell-resolver.ts:170` | high | Add target's save modifier to spell saves |
+| `src/engine/magic/spell-resolver.ts:282` | high | Implement summoning spell effects |
+| `src/engine/magic/scroll.ts:97` | medium | Add proficiency tracking to character schema |
+| `src/engine/combat/engine.ts:585` | medium | Implement proper crit rules (double dice) |
+| `src/engine/strategy/diplomacy-engine.ts:107` | low | Get turn from TurnProcessor instead of hardcoded |
+| `src/engine/strategy/turn-processor.ts:32` | low | Persist GDP update to database |
+
+### Skipped Tests
+
+| Location | Severity | Reason |
+|----------|----------|--------|
+| `tests/server/consolidated/batch-manage.test.ts:230,245` | medium | distribute_items needs items in items table first |
+| `tests/mcp/streaming.test.ts:21` | low | Windows process spawn timeout at MCP init |
+| `tests/server/spellcasting.test.ts:1262` | high | Needs save modifier implementation (TODO above) |
+| `tests/server/spellcasting.test.ts:1408,1422` | high | Counterspell not yet implemented |
 
 ### Future Considerations
 
-1. Add WebSocket real-time subscriptions for multi-client synchronization
-2. Implement dialogue tree system for complex NPC conversations
+1. Implement save modifiers for spell saves (high priority TODO)
+2. Implement summoning spell type (high priority TODO)
 3. Add cover mechanics to tactical combat (half cover, three-quarters cover)
-4. Create quest chain system with prerequisite dependencies
-5. Build visual debugger / world inspector UI for development and debugging
+4. Add authentication layer for networked transports (TCP/WebSocket)
+5. Build visual debugger / world inspector UI for development
 6. Optimize world generation for larger maps using chunked loading
-7. Add authentication layer for networked transports (TCP/WebSocket)
 
 ### Code Quality
 
 | Metric | Status |
 |--------|--------|
-| Tests | Yes with 800+ tests passing across all systems |
-| Linting | ESLint with TypeScript strict mode |
-| Type Safety | TypeScript strict mode enabled, Zod runtime validation |
-| Documentation | JSDoc comments on public APIs, comprehensive README, white paper |
+| Tests | 1889 passing, 6 skipped across 85+ test files |
+| Type Safety | TypeScript strict mode, near-zero `any` in consolidated tools |
+| Validation | Zod runtime validation on all tool inputs |
+| Documentation | JSDoc on public APIs, white paper, ADR docs |
 
 ## Appendix: File Structure
 
@@ -652,115 +501,149 @@ mnehmos.rpg.mcp/
 ├── src/
 │   ├── server/
 │   │   ├── index.ts                    # MCP server entry point and transport setup
-│   │   ├── tool-registry.ts            # Aggregates all 145+ tools with metadata
-│   │   ├── combat-tools.ts             # Combat encounter and action tools
-│   │   ├── inventory-tools.ts          # Item and inventory management
-│   │   ├── quest-tools.ts              # Quest creation and tracking
-│   │   ├── npc-memory-tools.ts         # NPC relationship and conversation memory
-│   │   ├── theft-tools.ts              # Theft and fence economy system
-│   │   ├── corpse-tools.ts             # Corpse looting and decay
-│   │   ├── improvisation-tools.ts      # Rule of Cool stunts and custom effects
-│   │   ├── composite-tools.ts          # High-level workflow tools
-│   │   ├── spatial-tools.ts            # Dungeon room navigation
-│   │   ├── math-tools.ts               # Dice rolling and calculations
-│   │   ├── strategy-tools.ts           # Grand strategy nation management
-│   │   ├── meta-tools.ts               # Tool discovery (search_tools, load_tool_schema)
-│   │   └── [25+ more tool modules]
+│   │   ├── consolidated-registry.ts    # Registers all 28 consolidated tools
+│   │   ├── tools.ts                    # Tool registration helpers
+│   │   ├── types.ts                    # SessionContext and shared types
+│   │   ├── meta-tools.ts              # search_tools, load_tool_schema
+│   │   ├── events.ts                   # PubSub + MCP notification streaming
+│   │   ├── audit.ts                    # Audit logging
+│   │   ├── tool-metadata.ts           # Tool descriptions and categories
+│   │   ├── terrain-patterns.ts        # Terrain generation patterns
+│   │   ├── consolidated/              # 28 action-routed tool handlers
+│   │   │   ├── index.ts              # Barrel export + ConsolidatedTools array
+│   │   │   ├── character-manage.ts   # Character CRUD + progression
+│   │   │   ├── party-manage.ts       # Party management
+│   │   │   ├── combat-manage.ts      # Encounter lifecycle
+│   │   │   ├── combat-action.ts      # In-combat action resolution
+│   │   │   ├── combat-map.ts         # Tactical map operations
+│   │   │   ├── world-manage.ts       # World state management
+│   │   │   ├── world-map.ts          # Procedural worldgen + terrain
+│   │   │   ├── spatial-manage.ts     # Room-based navigation
+│   │   │   ├── inventory-manage.ts   # Inventory operations
+│   │   │   ├── item-manage.ts        # Item template CRUD
+│   │   │   ├── quest-manage.ts       # Quest tracking
+│   │   │   ├── npc-manage.ts         # NPC lifecycle + memory
+│   │   │   ├── rest-manage.ts        # Short/long rest
+│   │   │   ├── concentration-manage.ts # Concentration tracking
+│   │   │   ├── scroll-manage.ts      # Spell scrolls
+│   │   │   ├── aura-manage.ts        # Persistent aura effects
+│   │   │   ├── corpse-manage.ts      # Corpse/loot system
+│   │   │   ├── theft-manage.ts       # Theft economy
+│   │   │   ├── narrative-manage.ts   # Story logging
+│   │   │   ├── secret-manage.ts      # Hidden information
+│   │   │   ├── improvisation-manage.ts # Rule of Cool
+│   │   │   ├── math-manage.ts        # Dice and calculations
+│   │   │   ├── strategy-manage.ts    # Grand strategy
+│   │   │   ├── turn-manage.ts        # Strategy turn processing
+│   │   │   ├── spawn-manage.ts       # Quick entity creation
+│   │   │   ├── session-manage.ts     # Session state
+│   │   │   ├── travel-manage.ts      # Overworld travel
+│   │   │   └── batch-manage.ts       # Batch operations
+│   │   └── handlers/                  # Extracted handler implementations
+│   │       ├── combat-handlers.ts    # Combat engine handler functions
+│   │       └── spatial-handlers.ts   # Spatial/room handler functions
 │   ├── engine/
 │   │   ├── combat/
-│   │   │   ├── engine.ts               # Combat state machine and action resolution
-│   │   │   ├── conditions.ts           # Status effect system
-│   │   │   └── rng.ts                  # Seeded random number generation
+│   │   │   ├── engine.ts             # Combat state machine and action resolution
+│   │   │   ├── conditions.ts         # Status effect system
+│   │   │   └── rng.ts                # Seeded random number generation
 │   │   ├── magic/
-│   │   │   ├── spell-database.ts       # 15+ SRD spells with validation
-│   │   │   ├── spell-resolver.ts       # Spell effect execution
-│   │   │   ├── spell-validator.ts      # Anti-hallucination spell checks
-│   │   │   ├── concentration.ts        # Concentration tracking
-│   │   │   ├── scroll.ts               # Spell scroll mechanics
-│   │   │   └── aura.ts                 # Persistent aura effects
+│   │   │   ├── spell-database.ts     # 15+ SRD spells with validation
+│   │   │   ├── spell-resolver.ts     # Spell effect execution
+│   │   │   ├── spell-validator.ts    # Anti-hallucination spell checks
+│   │   │   ├── concentration.ts      # Concentration tracking
+│   │   │   ├── scroll.ts             # Spell scroll mechanics
+│   │   │   └── aura.ts               # Persistent aura effects
 │   │   ├── spatial/
-│   │   │   ├── engine.ts               # Grid-based spatial combat
-│   │   │   └── heap.ts                 # Pathfinding priority queue
+│   │   │   ├── engine.ts             # Grid-based spatial combat
+│   │   │   └── heap.ts               # Pathfinding priority queue
 │   │   ├── worldgen/
-│   │   │   ├── biome.ts                # 28+ biome type definitions
-│   │   │   ├── heightmap.ts            # Perlin noise terrain generation
-│   │   │   ├── regions.ts              # Region clustering algorithm
-│   │   │   └── validation.ts           # World generation validation
+│   │   │   ├── biome.ts              # 28+ biome type definitions
+│   │   │   ├── heightmap.ts          # Perlin noise terrain generation
+│   │   │   ├── regions.ts            # Region clustering algorithm
+│   │   │   └── validation.ts         # World generation validation
 │   │   ├── strategy/
-│   │   │   ├── nation-manager.ts       # Grand strategy nation state
-│   │   │   ├── diplomacy-engine.ts     # Alliance and treaty system
-│   │   │   ├── turn-processor.ts       # Turn-based action resolution
-│   │   │   └── fog-of-war.ts           # Strategic visibility system
+│   │   │   ├── nation-manager.ts     # Grand strategy nation state
+│   │   │   ├── diplomacy-engine.ts   # Alliance and treaty system
+│   │   │   ├── turn-processor.ts     # Turn-based action resolution
+│   │   │   └── fog-of-war.ts         # Strategic visibility system
 │   │   ├── social/
-│   │   │   └── hearing.ts              # Conversation awareness radius
+│   │   │   └── hearing.ts            # Conversation awareness radius
 │   │   ├── dsl/
-│   │   │   ├── parser.ts               # Map patch DSL parser
-│   │   │   └── engine.ts               # DSL command execution
-│   │   ├── pubsub.ts                   # Event emission system
-│   │   └── replay.ts                   # Deterministic replay system
+│   │   │   ├── parser.ts             # Map patch DSL parser
+│   │   │   └── engine.ts             # DSL command execution
+│   │   ├── pubsub.ts                 # Event emission system
+│   │   └── replay.ts                 # Deterministic replay system
 │   ├── storage/
-│   │   ├── db.ts                       # SQLite initialization and integrity checks
-│   │   ├── migrations.ts               # Database schema definitions
-│   │   ├── index.ts                    # Database access layer
-│   │   └── repos/                      # Repository pattern implementations
-│   │       ├── world.repo.ts
-│   │       ├── character.repo.ts
-│   │       ├── encounter.repo.ts
-│   │       ├── inventory.repo.ts
-│   │       ├── quest.repo.ts
-│   │       ├── npc-memory.repo.ts
-│   │       ├── theft.repo.ts
-│   │       ├── corpse.repo.ts
-│   │       ├── concentration.repo.ts
-│   │       └── [15+ more repositories]
-│   ├── schema/
-│   │   ├── world.ts                    # World and tile schemas
-│   │   ├── character.ts                # Character stat block schema
-│   │   ├── spell.ts                    # Spell definition schema
-│   │   ├── quest.ts                    # Quest and objective schemas
-│   │   ├── inventory.ts                # Item and equipment schemas
-│   │   ├── theft.ts                    # Stolen item tracking schema
-│   │   ├── corpse.ts                   # Corpse and loot schemas
-│   │   ├── improvisation.ts            # Custom effect schemas
-│   │   ├── spatial.ts                  # Room network schemas
-│   │   ├── nation.ts                   # Strategy mode schemas
-│   │   └── [10+ more schema files]
+│   │   ├── db.ts                     # SQLite initialization and integrity checks
+│   │   ├── migrations.ts             # Database schema definitions
+│   │   ├── index.ts                  # Database access layer
+│   │   └── repos/                    # 27 repository implementations
+│   │       ├── character.repo.ts     # Character persistence
+│   │       ├── encounter.repo.ts     # Encounter state persistence
+│   │       ├── inventory.repo.ts     # Inventory persistence
+│   │       ├── world.repo.ts         # World state persistence
+│   │       ├── quest.repo.ts         # Quest tracking persistence
+│   │       ├── npc-memory.repo.ts    # NPC memory persistence
+│   │       ├── spatial.repo.ts       # Room/spatial persistence
+│   │       └── [20 more repos]       # Full coverage of all domain entities
+│   ├── schema/                        # 29 Zod validation schemas
+│   │   ├── character.ts              # Character stat block schema
+│   │   ├── encounter.ts              # Encounter state schema
+│   │   ├── spell.ts                  # Spell definition schema
+│   │   ├── world.ts                  # World state schema
+│   │   ├── inventory.ts              # Item and equipment schemas
+│   │   ├── base-schemas.ts           # Shared base schemas
+│   │   ├── index.ts                  # Schema barrel export
+│   │   └── [22 more schemas]         # Full coverage of all data structures
 │   ├── data/
-│   │   ├── creature-presets.ts         # 1100+ creature stat blocks
-│   │   ├── encounter-presets.ts        # 50+ balanced encounter templates
-│   │   ├── location-presets.ts         # 30+ location templates (tavern, dungeon, etc.)
-│   │   └── items/                      # PHB weapons, armor, magic items
+│   │   ├── creature-presets.ts       # 1100+ creature stat blocks
+│   │   ├── encounter-presets.ts      # 50+ balanced encounter templates
+│   │   ├── location-presets.ts       # 30+ location templates
+│   │   ├── item-presets.ts           # Item preset definitions
+│   │   ├── class-starting-data.ts    # D&D class starting equipment/spells
+│   │   └── items/                    # PHB weapons, armor, magic items
 │   ├── math/
-│   │   ├── index.ts                    # Dice rolling with D&D notation
-│   │   ├── algebra.ts                  # Equation solver
-│   │   ├── physics.ts                  # Projectile calculations
-│   │   └── probability.ts              # Probability calculations
-│   └── api/                            # Legacy API server (excluded from build)
-├── tests/                              # 800+ tests mirroring src/ structure
-│   ├── engine/
-│   │   ├── combat/
-│   │   ├── magic/
-│   │   └── worldgen/
-│   ├── storage/
-│   ├── data/
-│   └── mcp/
+│   │   ├── index.ts                  # Dice rolling with D&D notation
+│   │   ├── algebra.ts                # Equation solver
+│   │   ├── physics.ts                # Projectile calculations
+│   │   └── probability.ts            # Probability calculations
+│   └── utils/
+│       ├── action-router.ts          # Fuzzy enum matching for action routing
+│       ├── fuzzy-enum.ts             # Levenshtein distance fuzzy matching
+│       ├── schema-shorthand.ts       # Zod schema construction helpers
+│       └── logger.ts                 # Logging utility
+├── tests/                            # 85+ test files, 1889 tests
+│   ├── setup.ts                      # Test setup (crypto polyfill)
+│   ├── helpers/                      # Test utilities and legacy wrappers
+│   ├── combat/                       # Combat engine tests
+│   ├── engine/                       # Engine subsystem tests
+│   ├── math/                         # Math utility tests
+│   ├── schema/                       # Schema validation tests
+│   ├── server/                       # Tool handler tests
+│   │   ├── consolidated/             # Consolidated tool tests (28 files)
+│   │   └── [legacy handler tests]    # Combat, spatial, integration tests
+│   ├── spatial/                      # Spatial engine tests
+│   ├── storage/                      # Repository tests
+│   ├── worldgen/                     # World generation tests
+│   └── mcp/                          # MCP protocol integration tests
 ├── docs/
-│   ├── WHITE_PAPER.md                  # Architecture philosophy and design
-│   ├── LLMSpatialGuide.md              # Guide for LLMs on spatial reasoning
-│   └── RPG-MCP-LITE-*.md               # Design documentation
-├── bin/                                # Compiled standalone binaries
-├── dist/                               # TypeScript build output
-├── package.json                        # Dependencies and build scripts
-├── tsconfig.json                       # TypeScript strict mode configuration
-├── vitest.config.ts                    # Test configuration
-├── esbuild.config.mjs                  # Binary bundler configuration
-├── README.md                           # User-facing documentation
-├── CONTRIBUTING.md                     # Contribution guidelines
-└── PROJECT_KNOWLEDGE.md                # This document
-
+│   ├── WHITE_PAPER.md                # Architecture philosophy and design
+│   ├── LLMSpatialGuide.md            # Guide for LLMs on spatial reasoning
+│   ├── ADR-005-*.md                  # Architecture Decision Records
+│   └── RPG-MCP-LITE-*.md             # Design documentation
+├── dist/                             # TypeScript build output
+├── package.json                      # Dependencies and build scripts
+├── tsconfig.json                     # TypeScript strict mode configuration
+├── vitest.config.ts                  # Test configuration (globals: true)
+├── esbuild.config.mjs                # Binary bundler configuration
+├── README.md                         # User-facing documentation
+├── CONTRIBUTING.md                   # Contribution guidelines
+├── CLAUDE.md                         # Agent instructions
+└── PROJECT_KNOWLEDGE.md              # This document
 ```
 
 ---
 
-*Generated by Project Review Orchestrator | 2025-12-29*
+*Last updated: 2026-02-07 | Post-consolidation cleanup*
 *Source: https://github.com/Mnehmos/mnehmos.rpg.mcp*

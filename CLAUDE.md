@@ -2,9 +2,9 @@
 
 ## This Repository
 
-The backend game engine for Quest Keeper AI. **135 MCP tools** for complete RPG mechanics.
+The backend game engine for Quest Keeper AI. **32 MCP tools** (28 consolidated action-routed + 4 meta/event) for complete RPG mechanics.
 **Philosophy:** "LLM describes, engine validates" - Database is source of truth.
-**Status:** Alpha (90% complete) - 746 tests passing, 85 test files, MCP Protocol fully integrated
+**Status:** Alpha - 1889 tests passing, 85+ test files, MCP Protocol fully integrated
 
 ## Key Commands
 
@@ -20,18 +20,24 @@ npm run build:binaries            # Create standalone executables
 
 ```
 src/
-├── api/          # MCP tool definitions (registry.ts is the hub)
+├── server/
+│   ├── consolidated/  # 28 action-routed tool handlers
+│   ├── handlers/      # Extracted handler implementations (combat, spatial)
+│   ├── index.ts       # MCP server entry + transport setup
+│   └── meta-tools.ts  # search_tools, load_tool_schema
 ├── engine/
 │   ├── combat/   # Encounters, initiative, damage
+│   ├── magic/    # Spells, concentration, scrolls, auras
 │   ├── spatial/  # Grid, collision, movement
 │   ├── worldgen/ # Procedural generation
 │   └── strategy/ # Nation simulation
-├── storage/      # SQLite schemas & CRUD
-└── schema/       # Zod validation
+├── storage/      # SQLite repos & migrations
+├── schema/       # Zod validation (29 schemas)
+├── utils/        # Action router, fuzzy matching
+└── math/         # Dice, algebra, physics
 
-tests/            # Mirror of src/ structure
-docs/             # White paper & LLM spatial guide
-reference/        # Third-party references (Azgaar licensing)
+tests/            # Mirror of src/ structure (85+ files)
+docs/             # White paper, ADRs, LLM spatial guide
 ```
 
 ## Git Commit Convention
