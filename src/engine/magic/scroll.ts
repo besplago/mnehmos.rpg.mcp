@@ -94,7 +94,7 @@ export function rollArcanaCheck(character: Character): { roll: number; total: nu
     const intModifier = Math.floor((character.stats.int - 10) / 2);
 
     // For now, assume no proficiency bonus
-    // TODO: Add proficiency tracking to character schema
+    // TODO(medium): Add proficiency tracking to character schema
     const proficiencyBonus = 0;
 
     const modifier = intModifier + proficiencyBonus;

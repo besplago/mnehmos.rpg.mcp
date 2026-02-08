@@ -1255,10 +1255,8 @@ describe('Category 10: Spell Save DC & Attack Rolls', () => {
         expect(result.damage).toBeGreaterThan(0);
     });
 
-    // 10.4 - Successful save halves damage
-    // Probabilistic test - retry up to 5 times if RNG doesn't cooperate
-    // With 2 casts per attempt × 5 retries = 10 chances, failure probability < 0.0001%
-    // TODO: Wave 5 - Implement save roll display in spell output
+    // SKIP(high): Needs target save modifier implementation in spell-resolver.ts:170.
+    // Engine applies saves but doesn't factor target's ability modifier into the roll yet.
     test.skip('10.4 - successful save against fireball halves damage', { retry: 5 }, async () => {
         // Level 5 wizard has 2 third-level slots per SRD - we work within that constraint
         // Target has +5 Dex save vs DC 11, needs 6+ to pass (75% chance per attempt)
@@ -1403,8 +1401,8 @@ describe('Category 12: Edge Cases & Exploits', () => {
         expect(result.success).toBe(true);
     });
 
-    // 12.3 - Counterspell level check
-    // TODO: Wave 6 - Implement counterspell mechanics
+    // SKIP(high): Counterspell mechanics not yet implemented (Wave 6 feature).
+    // Needs: autoCounter property, level comparison logic in spell-resolver.
     test.skip('12.3 - counterspell automatically counters equal or lower level', async () => {
         const wizard = await createWizard(9, { knownSpells: ['Counterspell'] });
 
@@ -1417,8 +1415,8 @@ describe('Category 12: Edge Cases & Exploits', () => {
         expect(result.autoCounter).toBe(true);
     });
 
-    // 12.4 - Counterspell needs check for higher level spells
-    // TODO: Wave 6 - Implement counterspell ability check mechanics
+    // SKIP(high): Counterspell ability check not yet implemented (Wave 6 feature).
+    // Needs: abilityCheckRequired, abilityCheckDC properties, DC = 10 + spell level.
     test.skip('12.4 - counterspell requires check for higher level spells', async () => {
         const wizard = await createWizard(9, { knownSpells: ['Counterspell'] });
 

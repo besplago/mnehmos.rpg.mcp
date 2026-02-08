@@ -29,7 +29,7 @@ export class TurnProcessor {
         for (const nation of nations) {
             // Simple GDP growth: 1% per turn base + resources
             // const growthRate = 1.01;
-            // const newGdp = nation.gdp * growthRate; // TODO: Persist GDP update
+            // const newGdp = nation.gdp * growthRate; // TODO(low): Persist GDP update
 
             // Resource production based on owned regions (simplified for now)
             const newResources = {

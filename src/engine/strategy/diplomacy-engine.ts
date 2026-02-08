@@ -104,7 +104,7 @@ export class DiplomacyEngine {
 
         this.diplomacyRepo.logEvent({
             worldId: nation.worldId,
-            turnNumber: 0, // TODO: Get from TurnProcessor
+            turnNumber: 0, // TODO(low): Get from TurnProcessor
             eventType: type,
             involvedNations: involved,
             details,

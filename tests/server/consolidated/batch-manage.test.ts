@@ -224,9 +224,9 @@ describe('batch_manage consolidated tool', () => {
     });
 
     describe('distribute_items action', () => {
-        // NOTE: These tests are skipped because distribute_items requires proper integration
-        // with the inventory system (inventory_items join table), not a direct inventory column.
-        // TODO: Integrate distribute_items with InventoryRepository
+        // SKIP(medium): Tests need items pre-created in items table before distribution.
+        // distribute_items uses ItemRepository.findById() + InventoryRepository.addItem().
+        // Fix: create items via ItemRepository.create() before each test, pass item IDs not names.
         it.skip('should distribute items to character', async () => {
             const result = await handleBatchManage({
                 action: 'distribute_items',
@@ -242,6 +242,7 @@ describe('batch_manage consolidated tool', () => {
             expect(data.distributions[0].itemsGiven).toContain('Longsword');
         });
 
+        // SKIP(medium): Same as above - needs items in items table first
         it.skip('should distribute to multiple characters', async () => {
             // Create another character
             const db = getDb(':memory:');

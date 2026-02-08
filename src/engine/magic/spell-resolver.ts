@@ -167,7 +167,7 @@ export function resolveSpell(
 
                     // Roll save (or use provided mock)
                     const saveRoll = options.targetSaveRoll ?? (Math.floor(Math.random() * 20) + 1);
-                    const saveTotal = saveRoll; // TODO: Add target's save modifier
+                    const saveTotal = saveRoll; // TODO(high): Add target's save modifier
 
                     if (saveTotal >= spellSaveDC) {
                         result.saveResult = 'passed';
@@ -279,7 +279,7 @@ export function resolveSpell(
             }
 
             case 'summon': {
-                // TODO: Implement summoning
+                // TODO(high): Implement summoning
                 result.success = true;
                 break;
             }

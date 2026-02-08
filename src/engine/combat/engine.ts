@@ -582,7 +582,7 @@ export class CombatEngine {
         if (attackRoll.isHit) {
             // Critical Hit: Double the dice (approx. double the value for now if passing number)
             // If string was passed, we ideally double the DICE, but for now double the total is consistent with current impl.
-            // TODO: Implement proper crit rules (double dice) later using rollDamageDetailed
+            // TODO(medium): Implement proper crit rules (double dice) using rollDamageDetailed
             const finalBaseDamage = attackRoll.isCrit ? baseDamageVal * 2 : baseDamageVal;
             
             // HIGH-002: Apply resistance/vulnerability/immunity

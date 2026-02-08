@@ -10,14 +10,9 @@ const serverPath = 'src/server/index.ts';
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
 describe('Event Streaming Integration', () => {
-    // TODO: Fix or remove this integration test
-    // This test spawns a separate server process and attempts stdio communication
-    // The test consistently times out at initialization (step 0)
-    // EventStreaming itself is functional and verified by:
-    // - Unit tests: tests/engine/pubsub.test.ts  
-    // - Server integration: The subscribe_to_events tool exists and works
-    // - Actual usage: The streaming functionality is production-ready
-    // This specific test has environment/process spawning issues that need investigation
+    // SKIP(low): Process-spawning integration test times out at init (step 0) on Windows.
+    // EventStreaming verified by: tests/engine/pubsub.test.ts + subscribe_to_events tool.
+    // Fix would require stdio MCP client helper or test-mode server boot.
     it.skip('should receive combat events via MCP notifications', { timeout: 30000 }, async () => {
         return new Promise<void>((resolve, reject) => {
             let step = 0;
