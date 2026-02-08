@@ -582,11 +582,11 @@ export async function handleCharacterManage(args: unknown, _ctx: SessionContext)
             output += RichFormatter.alert(data.message || 'Unknown error', 'error');
             if (data.issues) {
                 output += RichFormatter.section('Validation Issues');
-                output += RichFormatter.list(data.issues.map((i: any) => `${i.path}: ${i.message}`));
+                output += RichFormatter.list(data.issues.map((i: { path: string; message: string }) => `${i.path}: ${i.message}`));
             }
             if (data.suggestions) {
                 output += RichFormatter.section('Suggestions');
-                output += RichFormatter.list(data.suggestions.map((s: any) =>
+                output += RichFormatter.list(data.suggestions.map((s: string | { value: string; similarity: number }) =>
                     typeof s === 'string' ? s : `${s.value} (${Math.round(s.similarity * 100)}%)`
                 ));
             }
@@ -643,7 +643,7 @@ export async function handleCharacterManage(args: unknown, _ctx: SessionContext)
             });
             if (data.conditions?.length) {
                 output += RichFormatter.section('Conditions');
-                output += RichFormatter.list(data.conditions.map((c: any) => c.name || c));
+                output += RichFormatter.list(data.conditions.map((c: string | { name: string }) => typeof c === 'string' ? c : c.name));
             }
         } else if (action === 'list' || action === 'all' || action === 'query') {
             output = RichFormatter.header(`Characters (${data.count})`, '👥');
@@ -651,7 +651,7 @@ export async function handleCharacterManage(args: unknown, _ctx: SessionContext)
                 output += `*Filtered by: ${data.filter}*\n\n`;
             }
             if (data.characters?.length) {
-                const rows = data.characters.map((c: any) => [
+                const rows = data.characters.map((c: { name: string; characterClass?: string; level?: number; hp: number; maxHp: number; characterType?: string }) => [
                     c.name,
                     c.characterClass || 'Adventurer',
                     `Lv${c.level || 1}`,

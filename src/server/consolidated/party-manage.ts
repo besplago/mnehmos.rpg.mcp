@@ -450,7 +450,7 @@ async function handleGetContext(args: z.infer<typeof GetContextSchema>): Promise
             location: party.currentLocation,
             formation: party.formation
         },
-        members: party.members.map((m: any) => ({
+        members: party.members.map((m: { character: { name: string; hp: number; maxHp: number }; role: 'leader' | 'member' | 'companion' | 'hireling' | 'prisoner' | 'mount' }) => ({
             name: m.character.name,
             role: m.role,
             hp: `${m.character.hp}/${m.character.maxHp}`,
@@ -486,10 +486,10 @@ async function handleGetContext(args: z.infer<typeof GetContextSchema>): Promise
         try {
             const quest = questRepo.findById(party.currentQuestId);
             if (quest) {
-                const completedCount = quest.objectives.filter((o: any) => o.completed).length;
+                const completedCount = quest.objectives.filter((o: { completed: boolean }) => o.completed).length;
                 context.activeQuest = {
                     name: quest.name,
-                    currentObjective: quest.objectives.find((o: any) => !o.completed)?.description,
+                    currentObjective: quest.objectives.find((o: { completed: boolean; description?: string }) => !o.completed)?.description,
                     progress: `${Math.round((completedCount / quest.objectives.length) * 100)}%`
                 };
             }
@@ -772,7 +772,7 @@ export async function handlePartyManage(args: unknown, _ctx: SessionContext): Pr
             });
             if (data.members?.length) {
                 output += RichFormatter.section('Initial Members');
-                const rows = data.members.map((m: any) => [m.name, m.role]);
+                const rows = data.members.map((m: { name: string; role: string }) => [m.name, m.role]);
                 output += RichFormatter.table(['Name', 'Role'], rows);
             }
         } else if (action === 'get' || action === 'fetch' || action === 'find') {
@@ -786,7 +786,7 @@ export async function handlePartyManage(args: unknown, _ctx: SessionContext): Pr
             });
             if (data.members?.length) {
                 output += RichFormatter.section('Party Members');
-                const rows = data.members.map((m: any) => [
+                const rows = data.members.map((m: { character?: { name: string }; characterId: string; role: string; isActive: boolean }) => [
                     m.character?.name || m.characterId,
                     m.role,
                     m.isActive ? '★' : ''
@@ -799,7 +799,7 @@ export async function handlePartyManage(args: unknown, _ctx: SessionContext): Pr
                 output += `*Filtered by: ${data.filter.status}*\n\n`;
             }
             if (data.parties?.length) {
-                const rows = data.parties.map((p: any) => [
+                const rows = data.parties.map((p: { name: string; status?: string; memberCount?: number; currentLocation?: string }) => [
                     p.name,
                     p.status || 'active',
                     p.memberCount || 0,
@@ -844,7 +844,7 @@ export async function handlePartyManage(args: unknown, _ctx: SessionContext): Pr
             });
             if (data.members?.length) {
                 output += RichFormatter.section('Members');
-                const rows = data.members.map((m: any) => [
+                const rows = data.members.map((m: { character?: { name: string; hp?: string; maxHp?: string }; characterId: string; role: string; isActive: boolean }) => [
                     m.character?.name || m.characterId,
                     m.role,
                     `${m.character?.hp || '?'}/${m.character?.maxHp || '?'}`,
@@ -871,7 +871,7 @@ export async function handlePartyManage(args: unknown, _ctx: SessionContext): Pr
             }
             if (data.members?.length) {
                 output += RichFormatter.section('Party Status');
-                const rows = data.members.map((m: any) => [m.name, m.role, m.hp, m.status]);
+                const rows = data.members.map((m: { name: string; role: string; hp: string; status: string }) => [m.name, m.role, m.hp, m.status]);
                 output += RichFormatter.table(['Name', 'Role', 'HP', 'Status'], rows);
             }
             if (data.activeQuest) {
@@ -884,7 +884,7 @@ export async function handlePartyManage(args: unknown, _ctx: SessionContext): Pr
         } else if (action === 'get_unassigned' || action === 'unassigned' || action === 'available') {
             output = RichFormatter.header(`Unassigned Characters (${data.count})`, '👤');
             if (data.characters?.length) {
-                const rows = data.characters.map((c: any) => [c.name, c.characterClass || 'Adventurer', `Lv${c.level || 1}`]);
+                const rows = data.characters.map((c: { name: string; characterClass?: string; level?: number }) => [c.name, c.characterClass || 'Adventurer', `Lv${c.level || 1}`]);
                 output += RichFormatter.table(['Name', 'Class', 'Level'], rows);
             } else {
                 output += '*No unassigned characters*\n';
@@ -908,7 +908,7 @@ export async function handlePartyManage(args: unknown, _ctx: SessionContext): Pr
             output = RichFormatter.header(`Nearby Parties (${data.count})`, '🔍');
             output += `Search area: (${data.searchArea?.x}, ${data.searchArea?.y}) radius ${data.searchArea?.radius}\n\n`;
             if (data.parties?.length) {
-                const rows = data.parties.map((p: any) => [
+                const rows = data.parties.map((p: { name: string; locationName?: string; positionX?: number; positionY?: number }) => [
                     p.name,
                     p.locationName || 'Unknown',
                     `(${p.positionX ?? '?'}, ${p.positionY ?? '?'})`
