@@ -228,7 +228,7 @@ npm test  # 2080+ tests should pass
   "mcpServers": {
     "rpg-mcp": {
       "command": "npx",
-      "args": ["-y", "mnehmos.rpg.mcp@1.0.1"]
+      "args": ["-y", "mnehmos.rpg.mcp@1.0.2"]
     }
   }
 }
