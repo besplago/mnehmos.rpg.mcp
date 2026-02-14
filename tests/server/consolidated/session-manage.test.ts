@@ -363,6 +363,99 @@ describe('session_manage consolidated tool', () => {
         });
     });
 
+    describe('wipe_database action', () => {
+        it('should delete all data from all database tables', async () => {
+            const db = getDb(':memory:');
+
+            // Verify data exists before wipe
+            const worldsBefore = db.prepare('SELECT COUNT(*) as count FROM worlds').get() as { count: number };
+            const charsBefore = db.prepare('SELECT COUNT(*) as count FROM characters').get() as { count: number };
+            const partiesBefore = db.prepare('SELECT COUNT(*) as count FROM parties').get() as { count: number };
+            const questsBefore = db.prepare('SELECT COUNT(*) as count FROM quests').get() as { count: number };
+
+            expect(worldsBefore.count).toBeGreaterThan(0);
+            expect(charsBefore.count).toBeGreaterThan(0);
+            expect(partiesBefore.count).toBeGreaterThan(0);
+            expect(questsBefore.count).toBeGreaterThan(0);
+
+            const result = await handleSessionManage({ action: 'wipe_database' }, ctx);
+            const data = parseResult(result);
+
+            expect(data.success).toBe(true);
+            expect(data.actionType).toBe('wipe_database');
+            expect(data.totalRowsDeleted).toBeGreaterThan(0);
+            expect(data.tablesCleared).toBeGreaterThan(0);
+
+            // Verify all data is gone
+            const worldsAfter = db.prepare('SELECT COUNT(*) as count FROM worlds').get() as { count: number };
+            const charsAfter = db.prepare('SELECT COUNT(*) as count FROM characters').get() as { count: number };
+            const partiesAfter = db.prepare('SELECT COUNT(*) as count FROM parties').get() as { count: number };
+            const questsAfter = db.prepare('SELECT COUNT(*) as count FROM quests').get() as { count: number };
+
+            expect(worldsAfter.count).toBe(0);
+            expect(charsAfter.count).toBe(0);
+            expect(partiesAfter.count).toBe(0);
+            expect(questsAfter.count).toBe(0);
+        });
+
+        it('should also clear in-memory state', async () => {
+            const combat = getCombatManager();
+            const world = getWorldManager();
+            combat.create('s1:e1', {} as any);
+            world.create('s1:w1', {} as any);
+
+            const result = await handleSessionManage({ action: 'wipe_database' }, ctx);
+            const data = parseResult(result);
+
+            expect(data.success).toBe(true);
+            expect(data.encountersCleared).toBe(1);
+            expect(data.worldStatesCleared).toBe(1);
+            expect(combat.list()).toHaveLength(0);
+            expect(world.list()).toHaveLength(0);
+        });
+
+        it('should return per-table counts', async () => {
+            const result = await handleSessionManage({ action: 'wipe_database' }, ctx);
+            const data = parseResult(result);
+
+            expect(data.success).toBe(true);
+            expect(data.tableCounts).toBeDefined();
+            // We know there's at least worlds, characters, parties, quests data
+            expect(data.tableCounts.worlds).toBeGreaterThan(0);
+            expect(data.tableCounts.characters).toBeGreaterThan(0);
+        });
+
+        it('should handle empty database gracefully', async () => {
+            // First wipe
+            await handleSessionManage({ action: 'wipe_database' }, ctx);
+            // Second wipe on empty db
+            const result = await handleSessionManage({ action: 'wipe_database' }, ctx);
+            const data = parseResult(result);
+
+            expect(data.success).toBe(true);
+            expect(data.totalRowsDeleted).toBe(0);
+            expect(data.tablesCleared).toBe(0);
+        });
+
+        it('should accept "wipe" alias', async () => {
+            const result = await handleSessionManage({ action: 'wipe' }, ctx);
+            const data = parseResult(result);
+            expect(data.actionType).toBe('wipe_database');
+        });
+
+        it('should accept "nuke" alias', async () => {
+            const result = await handleSessionManage({ action: 'nuke' }, ctx);
+            const data = parseResult(result);
+            expect(data.actionType).toBe('wipe_database');
+        });
+
+        it('should accept "factory_reset" alias', async () => {
+            const result = await handleSessionManage({ action: 'factory_reset' }, ctx);
+            const data = parseResult(result);
+            expect(data.actionType).toBe('wipe_database');
+        });
+    });
+
     describe('fuzzy matching', () => {
         it('should auto-correct close typos', async () => {
             const result = await handleSessionManage({
