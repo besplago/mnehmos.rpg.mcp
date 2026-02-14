@@ -12,15 +12,18 @@ import { getDb } from '../../storage/index.js';
 import { PartyRepository } from '../../storage/repos/party.repo.js';
 import { QuestRepository } from '../../storage/repos/quest.repo.js';
 import { WorldRepository } from '../../storage/repos/world.repo.js';
+import { getCombatManager } from '../state/combat-manager.js';
+import { getWorldManager } from '../state/world-manager.js';
+import { clearAllEventSubscriptions } from '../events.js';
 import { SessionContext } from '../types.js';
 
 export interface McpResponse {
     content: Array<{ type: 'text'; text: string }>;
 }
 
-const ACTIONS = ['initialize', 'get_context'] as const;
+const ACTIONS = ['initialize', 'get_context', 'delete_all'] as const;
 
-type SessionAction = typeof ACTIONS[number];
+type SessionAction = (typeof ACTIONS)[number];
 
 // Alias map for fuzzy action matching
 const ALIASES: Record<string, SessionAction> = {
@@ -33,7 +36,11 @@ const ALIASES: Record<string, SessionAction> = {
     'narrative': 'get_context',
     'narrative_context': 'get_context',
     'get_narrative': 'get_context',
-    'summary': 'get_context'
+    'summary': 'get_context',
+    'delete_all_sessions': 'delete_all',
+    'clear_sessions': 'delete_all',
+    'clear_all': 'delete_all',
+    'reset_sessions': 'delete_all'
 };
 
 function ensureDb() {
@@ -53,7 +60,7 @@ function ensureDb() {
 
 // Input schema
 const SessionManageInputSchema = z.object({
-    action: z.string().describe('Action: initialize, get_context'),
+    action: z.string().describe('Action: initialize, get_context, delete_all'),
 
     // initialize fields
     worldId: z.string().optional().describe('World ID to load'),
@@ -333,6 +340,32 @@ async function handleGetContext(input: SessionManageInput, _ctx: SessionContext)
     return { content: [{ type: 'text', text: output }] };
 }
 
+async function handleDeleteAll(_input: SessionManageInput, _ctx: SessionContext): Promise<McpResponse> {
+    const combatManager = getCombatManager();
+    const worldManager = getWorldManager();
+
+    const encounterKeys = combatManager.list();
+    const worldKeys = worldManager.list();
+
+    combatManager.clear();
+    worldManager.clear();
+    clearAllEventSubscriptions();
+
+    const output = RichFormatter.header('All Sessions Deleted', '🗑️')
+        + RichFormatter.keyValue({
+            'Encounters cleared': encounterKeys.length,
+            'World states cleared': worldKeys.length,
+            'Event subscriptions': 'cleared'
+        });
+    const result = {
+        success: true,
+        actionType: 'delete_all',
+        encountersCleared: encounterKeys.length,
+        worldStatesCleared: worldKeys.length
+    };
+    return { content: [{ type: 'text', text: output + RichFormatter.embedJson(result, 'SESSION_MANAGE') }] };
+}
+
 // Main handler
 export async function handleSessionManage(args: unknown, ctx: SessionContext): Promise<McpResponse> {
     const input = SessionManageInputSchema.parse(args);
@@ -353,6 +386,8 @@ export async function handleSessionManage(args: unknown, ctx: SessionContext): P
             return handleInitialize(input, ctx);
         case 'get_context':
             return handleGetContext(input, ctx);
+        case 'delete_all':
+            return handleDeleteAll(input, ctx);
         default:
             return {
                 content: [{
@@ -384,7 +419,7 @@ export const SessionManageTool = {
 Call get_context at conversation start to understand game state.
 Inject context into system prompt for informed storytelling.
 
-Actions: initialize, get_context
-Aliases: init/start→initialize, context/narrative→get_context`,
+Actions: initialize, get_context, delete_all
+Aliases: init/start→initialize, context/narrative→get_context, delete_all_sessions/clear_sessions→delete_all`,
     inputSchema: SessionManageInputSchema
 };

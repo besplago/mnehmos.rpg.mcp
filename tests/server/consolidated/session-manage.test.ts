@@ -1,9 +1,11 @@
 /**
  * Tests for consolidated session_manage tool
- * Validates all 2 actions: initialize, get_context
+ * Validates all 3 actions: initialize, get_context, delete_all
  */
 
 import { handleSessionManage, SessionManageTool } from '../../../src/server/consolidated/session-manage.js';
+import { getCombatManager } from '../../../src/server/state/combat-manager.js';
+import { getWorldManager } from '../../../src/server/state/world-manager.js';
 import { getDb, closeDb } from '../../../src/storage/index.js';
 import { WorldRepository } from '../../../src/storage/repos/world.repo.js';
 import { PartyRepository } from '../../../src/storage/repos/party.repo.js';
@@ -142,6 +144,7 @@ describe('session_manage consolidated tool', () => {
         it('should list all available actions in description', () => {
             expect(SessionManageTool.description).toContain('initialize');
             expect(SessionManageTool.description).toContain('get_context');
+            expect(SessionManageTool.description).toContain('delete_all');
         });
     });
 
@@ -322,6 +325,41 @@ describe('session_manage consolidated tool', () => {
 
             const data = parseResult(result);
             expect(data.actionType).toBe('get_context');
+        });
+    });
+
+    describe('delete_all action', () => {
+        it('should clear all in-memory sessions and return counts', async () => {
+            const combat = getCombatManager();
+            const world = getWorldManager();
+            combat.create('s1:e1', {} as any);
+            world.create('s1:w1', {} as any);
+            world.create('s2:w2', {} as any);
+
+            const result = await handleSessionManage({ action: 'delete_all' }, ctx);
+            const data = parseResult(result);
+
+            expect(data.success).toBe(true);
+            expect(data.actionType).toBe('delete_all');
+            expect(data.encountersCleared).toBe(1);
+            expect(data.worldStatesCleared).toBe(2);
+            expect(combat.list()).toHaveLength(0);
+            expect(world.list()).toHaveLength(0);
+        });
+
+        it('should return zeros when no session state exists', async () => {
+            const result = await handleSessionManage({ action: 'delete_all' }, ctx);
+            const data = parseResult(result);
+            expect(data.success).toBe(true);
+            expect(data.actionType).toBe('delete_all');
+            expect(data.encountersCleared).toBe(0);
+            expect(data.worldStatesCleared).toBe(0);
+        });
+
+        it('should accept delete_all_sessions alias', async () => {
+            const result = await handleSessionManage({ action: 'delete_all_sessions' }, ctx);
+            const data = parseResult(result);
+            expect(data.actionType).toBe('delete_all');
         });
     });
 

@@ -21,6 +21,10 @@ export class WorldManager {
     list(): string[] {
         return Array.from(this.worlds.keys());
     }
+
+    clear(): void {
+        this.worlds.clear();
+    }
 }
 
 // Singleton for server lifetime

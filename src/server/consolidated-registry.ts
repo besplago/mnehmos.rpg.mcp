@@ -95,7 +95,7 @@ const TOOL_KEYWORDS: Record<string, string[]> = {
     strategy_manage: ['nation', 'alliance', 'territory', 'strategy', 'diplomacy'],
     turn_manage: ['turn', 'phase', 'ready', 'poll', 'results', 'async'],
     spawn_manage: ['spawn', 'create', 'encounter', 'location', 'tactical'],
-    session_manage: ['session', 'initialize', 'context', 'start', 'resume'],
+    session_manage: ['session', 'initialize', 'context', 'start', 'resume', 'delete', 'clear', 'reset'],
     travel_manage: ['travel', 'move', 'rest', 'loot', 'journey', 'party'],
     batch_manage: ['batch', 'bulk', 'create', 'workflow', 'template'],
 };
@@ -127,7 +127,7 @@ const TOOL_CAPABILITIES: Record<string, string[]> = {
     strategy_manage: ['Nation management', 'Diplomacy', 'Territory'],
     turn_manage: ['Turn phases', 'Action submission', 'Result polling'],
     spawn_manage: ['Spawn characters', 'Create locations', 'Generate encounters'],
-    session_manage: ['Session initialization', 'Context loading'],
+    session_manage: ['Session initialization', 'Context loading', 'Delete all sessions'],
     travel_manage: ['Party travel', 'Encounter looting', 'Camp/rest'],
     batch_manage: ['Bulk character creation', 'Workflows', 'Templates'],
 };

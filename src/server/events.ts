@@ -16,6 +16,14 @@ export const EventTools = {
 // Track subscriptions per session
 const activeSubscriptions: Map<string, Array<() => void>> = new Map();
 
+/** Unsubscribe all sessions and clear the subscription map. Used by delete_all_sessions. */
+export function clearAllEventSubscriptions(): void {
+    for (const unsubs of activeSubscriptions.values()) {
+        unsubs.forEach(u => u());
+    }
+    activeSubscriptions.clear();
+}
+
 export function registerEventTools(server: McpServer, pubsub: PubSub) {
     server.tool(
         EventTools.SUBSCRIBE.name,
