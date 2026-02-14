@@ -1083,6 +1083,23 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
                 attackDamage: preset.defaultAttack?.damage,
                 attackBonus: preset.defaultAttack?.toHit
             };
+        } else {
+            // No preset match - look up character from DB for PC/NPC AC
+            try {
+                const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+                const charRepo = new CharacterRepository(db);
+                const character = charRepo.findById(p.id);
+                if (character && character.ac) {
+                    extraStats = { ac: character.ac };
+                }
+            } catch {
+                // DB lookup is best-effort; continue without AC if it fails
+            }
+        }
+
+        // Allow explicit AC from participant input to override
+        if (p.ac !== undefined) {
+            extraStats.ac = p.ac;
         }
 
         const participant = {
