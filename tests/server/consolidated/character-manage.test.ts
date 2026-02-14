@@ -396,6 +396,31 @@ describe('character_manage consolidated tool', () => {
             const getData = extractJson(getResult.content[0].text);
             expect(getData.xp).toBe(250);
         });
+
+        it('should persist added XP for playable character (pc)', async () => {
+            const createResult = await handleCharacterManage({
+                action: 'create',
+                name: 'Playable Hero',
+                level: 1,
+                characterType: 'pc'
+            }, ctx);
+            const pcId = extractJson(createResult.content[0].text).id;
+
+            await handleCharacterManage({
+                action: 'add_xp',
+                characterId: pcId,
+                amount: 500
+            }, ctx);
+
+            const getResult = await handleCharacterManage({
+                action: 'get',
+                characterId: pcId
+            }, ctx);
+
+            const getData = extractJson(getResult.content[0].text);
+            expect(getData.characterType).toBe('pc');
+            expect(getData.xp).toBe(500);
+        });
     });
 
     describe('action: get_progression', () => {
