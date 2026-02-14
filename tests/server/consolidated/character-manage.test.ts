@@ -380,6 +380,22 @@ describe('character_manage consolidated tool', () => {
             expect(parsed.newXp).toBe(50);
             expect(parsed._fuzzyMatch).toBeDefined();
         });
+
+        it('should persist added XP so a subsequent get returns the new total', async () => {
+            await handleCharacterManage({
+                action: 'add_xp',
+                characterId,
+                amount: 250
+            }, ctx);
+
+            const getResult = await handleCharacterManage({
+                action: 'get',
+                characterId
+            }, ctx);
+
+            const getData = extractJson(getResult.content[0].text);
+            expect(getData.xp).toBe(250);
+        });
     });
 
     describe('action: get_progression', () => {
