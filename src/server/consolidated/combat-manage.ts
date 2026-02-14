@@ -37,6 +37,7 @@ type CombatManageAction = typeof ACTIONS[number];
 const ParticipantSchema = z.object({
     id: z.string(),
     name: z.string(),
+    ac: z.number().int().optional(),
     initiativeBonus: z.number().int(),
     hp: z.number().int().nonnegative(), // Allow 0 HP for dying characters
     maxHp: z.number().int().positive(),
