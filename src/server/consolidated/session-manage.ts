@@ -21,7 +21,7 @@ export interface McpResponse {
     content: Array<{ type: 'text'; text: string }>;
 }
 
-const ACTIONS = ['initialize', 'get_context', 'delete_all'] as const;
+const ACTIONS = ['initialize', 'get_context', 'delete_all', 'wipe_database'] as const;
 
 type SessionAction = (typeof ACTIONS)[number];
 
@@ -40,7 +40,15 @@ const ALIASES: Record<string, SessionAction> = {
     'delete_all_sessions': 'delete_all',
     'clear_sessions': 'delete_all',
     'clear_all': 'delete_all',
-    'reset_sessions': 'delete_all'
+    'reset_sessions': 'delete_all',
+    'wipe': 'wipe_database',
+    'wipe_db': 'wipe_database',
+    'clear_database': 'wipe_database',
+    'clear_db': 'wipe_database',
+    'reset_database': 'wipe_database',
+    'reset_db': 'wipe_database',
+    'nuke': 'wipe_database',
+    'factory_reset': 'wipe_database'
 };
 
 function ensureDb() {
@@ -60,7 +68,7 @@ function ensureDb() {
 
 // Input schema
 const SessionManageInputSchema = z.object({
-    action: z.string().describe('Action: initialize, get_context, delete_all'),
+    action: z.string().describe('Action: initialize, get_context, delete_all, wipe_database'),
 
     // initialize fields
     worldId: z.string().optional().describe('World ID to load'),
@@ -366,6 +374,122 @@ async function handleDeleteAll(_input: SessionManageInput, _ctx: SessionContext)
     return { content: [{ type: 'text', text: output + RichFormatter.embedJson(result, 'SESSION_MANAGE') }] };
 }
 
+// Tables ordered for safe deletion (children before parents, respecting FK constraints)
+const DELETE_ORDER = [
+    // Child tables with FK dependencies
+    'corpse_inventory',
+    'stolen_items',
+    'fence_npcs',
+    'inventory_items',
+    'party_members',
+    'quest_logs',
+    'conversation_memories',
+    'npc_relationships',
+    'concentration',
+    'auras',
+    'custom_effects',
+    'synthesized_spells',
+    'combat_action_log',
+    'battlefield',
+    'event_inbox',
+    'narrative_notes',
+    'diplomatic_relations',
+    'territorial_claims',
+    'nation_events',
+    'turn_state',
+    'loot_tables',
+    'corpses',
+    'secrets',
+    // Mid-level tables
+    'nations',
+    'encounters',
+    'quests',
+    'items',
+    'characters',
+    'room_nodes',
+    'node_networks',
+    'structures',
+    'rivers',
+    'tiles',
+    'regions',
+    'patches',
+    'calculations',
+    'audit_logs',
+    'event_logs',
+    // Top-level parent
+    'parties',
+    'worlds',
+];
+
+async function handleWipeDatabase(_input: SessionManageInput, _ctx: SessionContext): Promise<McpResponse> {
+    const { db } = ensureDb();
+    const combatManager = getCombatManager();
+    const worldManager = getWorldManager();
+
+    // Clear in-memory state
+    const encounterKeys = combatManager.list();
+    const worldKeys = worldManager.list();
+    combatManager.clear();
+    worldManager.clear();
+    clearAllEventSubscriptions();
+
+    // Temporarily disable foreign keys to allow deletion in any order as fallback
+    db.pragma('foreign_keys = OFF');
+
+    const tableCounts: Record<string, number> = {};
+    let totalDeleted = 0;
+
+    try {
+        const deleteAll = db.transaction(() => {
+            for (const table of DELETE_ORDER) {
+                try {
+                    const countResult = db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number } | undefined;
+                    const count = countResult?.count ?? 0;
+                    if (count > 0) {
+                        db.prepare(`DELETE FROM ${table}`).run();
+                        tableCounts[table] = count;
+                        totalDeleted += count;
+                    }
+                } catch {
+                    // Table may not exist in older schemas - skip silently
+                }
+            }
+        });
+        deleteAll();
+    } finally {
+        db.pragma('foreign_keys = ON');
+    }
+
+    let output = RichFormatter.header('Database Wiped', '💥');
+    output += RichFormatter.keyValue({
+        'Tables cleared': Object.keys(tableCounts).length,
+        'Total rows deleted': totalDeleted,
+        'In-memory encounters cleared': encounterKeys.length,
+        'In-memory world states cleared': worldKeys.length,
+        'Event subscriptions': 'cleared'
+    });
+
+    if (Object.keys(tableCounts).length > 0) {
+        output += RichFormatter.section('Rows Deleted Per Table');
+        const rows = Object.entries(tableCounts).map(([table, count]) => [table, String(count)]);
+        output += RichFormatter.table(['Table', 'Rows'], rows);
+    }
+
+    const result = {
+        success: true,
+        actionType: 'wipe_database',
+        tablesCleared: Object.keys(tableCounts).length,
+        totalRowsDeleted: totalDeleted,
+        tableCounts,
+        encountersCleared: encounterKeys.length,
+        worldStatesCleared: worldKeys.length
+    };
+
+    output += RichFormatter.embedJson(result, 'SESSION_MANAGE');
+
+    return { content: [{ type: 'text', text: output }] };
+}
+
 // Main handler
 export async function handleSessionManage(args: unknown, ctx: SessionContext): Promise<McpResponse> {
     const input = SessionManageInputSchema.parse(args);
@@ -388,6 +512,8 @@ export async function handleSessionManage(args: unknown, ctx: SessionContext): P
             return handleGetContext(input, ctx);
         case 'delete_all':
             return handleDeleteAll(input, ctx);
+        case 'wipe_database':
+            return handleWipeDatabase(input, ctx);
         default:
             return {
                 content: [{
@@ -419,7 +545,7 @@ export const SessionManageTool = {
 Call get_context at conversation start to understand game state.
 Inject context into system prompt for informed storytelling.
 
-Actions: initialize, get_context, delete_all
-Aliases: init/start→initialize, context/narrative→get_context, delete_all_sessions/clear_sessions→delete_all`,
+Actions: initialize, get_context, delete_all, wipe_database
+Aliases: init/start→initialize, context/narrative→get_context, delete_all_sessions/clear_sessions→delete_all, wipe/nuke/factory_reset→wipe_database`,
     inputSchema: SessionManageInputSchema
 };
