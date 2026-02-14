@@ -573,6 +573,7 @@ Example (use real UUID from context for player character!):
             participants: z.array(z.object({
                 id: z.string(),
                 name: z.string(),
+                ac: z.number().int().optional().describe('Armor Class override (auto-detected from preset/DB if not set)'),
                 initiativeBonus: z.number().int(),
                 hp: z.number().int().nonnegative(), // Allow 0 HP for dying characters
                 maxHp: z.number().int().positive(),
